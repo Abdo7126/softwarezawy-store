@@ -1,0 +1,17 @@
+خطوات SEO لموقع SoftwareZawy
+============================
+
+1. ارفع الملفات على GitHub Pages أو الاستضافة المطلوبة.
+2. تأكد أن robots.txt و sitemap.xml يفتحان من جذر الموقع.
+3. اربط الدومين في Google Search Console كـ Domain property.
+4. أرسل الرابط الكامل:
+   https://softwarezawy.shop/sitemap.xml
+5. اطلب فهرسة الصفحات المهمة:
+   - الصفحة الرئيسية
+   - كل الاشتراكات
+   - صفحات الأقسام
+   - الدعم والمعلومات
+6. لا تطلب فهرسة السلة أو صفحات الأدمن.
+7. حدّث عناوين المنتجات ووصفها بكلمات طبيعية مثل:
+   اشتراك ChatGPT Plus، اشتراك Midjourney، Canva Pro، أدوات ذكاء اصطناعي.
+8. أضف روابط الموقع إلى WhatsApp Business وFacebook وInstagram وGoogle Business Profile إن وجد.

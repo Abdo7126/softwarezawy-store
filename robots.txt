@@ -1,0 +1,14 @@
+User-agent: *
+Allow: /
+Disallow: /softwarezawy-cart.html
+Disallow: /softwarezawy-admin.html
+Disallow: /softwarezawy-admin-dashboard.html
+Disallow: /softwarezawy-admin-products.html
+Disallow: /softwarezawy-admin-visual.html
+Disallow: /softwarezawy-admin-orders.html
+Disallow: /softwarezawy-admin-coupons.html
+Disallow: /softwarezawy-admin-settings.html
+Disallow: /softwarezawy-admin-invoice.html
+Disallow: /softwarezawy-admin-managers.html
+
+Sitemap: https://softwarezawy.shop/sitemap.xml

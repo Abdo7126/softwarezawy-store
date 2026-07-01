@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n-ar="الدعم والمعلومات | SoftwareZawy" data-i18n-en="Support and info | SoftwareZawy">الدعم والمعلومات | SoftwareZawy</title>
+  <meta name="description" content="معلومات الدعم وطريقة طلب اشتراكات AI من SoftwareZawy وسياسات التفعيل والاستبدال.">
+  <link rel="canonical" href="https://softwarezawy.shop/softwarezawy-info.html">
+  <link rel="icon" href="favicon.ico?v=3" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=3">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
+  <link rel="stylesheet" href="assets/softwarezawy-site.css">
+  <script src="assets/softwarezawy-sync-config.js" defer></script>
+  <script src="assets/softwarezawy-data.js" defer></script>
+  <script src="assets/softwarezawy-store.js" defer></script>
+</head>
+<body>
+  <header class="site-header" data-header></header>
+  <div class="drawer" data-drawer></div>
+  <main class="page-shell">
+    <p class="eyebrow">Support</p>
+    <h1 data-i18n-ar="الدعم والمعلومات" data-i18n-en="Support and info">الدعم والمعلومات</h1>
+    <div class="features-grid">
+      <article class="feature">
+        <h3 data-i18n-ar="طريقة الطلب" data-i18n-en="How to order">طريقة الطلب</h3>
+        <p data-i18n-ar="أضف الاشتراكات للسلة، املأ بيانات التواصل، ثم أرسل الطلب لواتساب الأدمن برسالة جاهزة." data-i18n-en="Add subscriptions to the cart, fill in your contact details, then send the ready message to admin WhatsApp.">أضف الاشتراكات للسلة، املأ بيانات التواصل، ثم أرسل الطلب لواتساب الأدمن برسالة جاهزة.</p>
+      </article>
+      <article class="feature">
+        <h3 data-i18n-ar="الدفع" data-i18n-en="Payment">الدفع</h3>
+        <p data-i18n-ar="يتم الاتفاق على طريقة الدفع بعد تأكيد توفر الاشتراك وطريقة التفعيل المناسبة لك." data-i18n-en="Payment is arranged after confirming subscription availability and the activation method that fits you.">يتم الاتفاق على طريقة الدفع بعد تأكيد توفر الاشتراك وطريقة التفعيل المناسبة لك.</p>
+      </article>
+      <article class="feature">
+        <h3 data-i18n-ar="الضمان" data-i18n-en="Guarantee">الضمان</h3>
+        <p data-i18n-ar="في حالة وجود مشكلة تفعيل، يتم المتابعة أو الاستبدال حسب سياسة الخدمة ونوع الخطة." data-i18n-en="If activation has an issue, follow-up or replacement is handled according to the service policy and plan type.">في حالة وجود مشكلة تفعيل، يتم المتابعة أو الاستبدال حسب سياسة الخدمة ونوع الخطة.</p>
+      </article>
+    </div>
+    <section class="form-panel" style="margin-top:18px">
+      <h2 data-i18n-ar="تواصل مباشر" data-i18n-en="Direct contact">تواصل مباشر</h2>
+      <p class="lead" data-i18n-ar="لو مش متأكد أي أداة مناسبة، ابعت للدعم استخدامك والميزانية المتاحة." data-i18n-en="If you are not sure which tool fits, send your use case and budget to support.">لو مش متأكد أي أداة مناسبة، ابعت للدعم استخدامك والميزانية المتاحة.</p>
+      <a class="btn primary" data-support-whatsapp target="_blank" rel="noopener" data-i18n-ar="واتساب الدعم" data-i18n-en="WhatsApp support">واتساب الدعم</a>
+    </section>
+  </main>
+  <footer class="site-footer"><div class="footer-inner"><span>SoftwareZawy</span><a href="index.html" data-i18n-ar="الرئيسية" data-i18n-en="Home">الرئيسية</a></div></footer>
+  <script>
+    document.addEventListener("DOMContentLoaded", () => szWaitForSync().then(() => {
+      document.querySelector("[data-support-whatsapp]").href = szWhatsAppLink(szT("أحتاج مساعدة في اختيار اشتراك AI", "I need help choosing an AI subscription"));
+    }));
+  </script>
+</body>
+</html>

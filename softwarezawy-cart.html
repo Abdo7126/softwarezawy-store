@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n-ar="السلة والدفع | SoftwareZawy" data-i18n-en="Cart and checkout | SoftwareZawy">السلة والدفع | SoftwareZawy</title>
+  <meta name="robots" content="noindex,nofollow">
+  <link rel="icon" href="favicon.ico?v=3" sizes="any">
+  <link rel="icon" type="image/svg+xml" href="favicon.svg?v=3">
+  <link rel="apple-touch-icon" href="assets/apple-touch-icon.png?v=3">
+  <link rel="stylesheet" href="assets/softwarezawy-site.css">
+  <script src="assets/softwarezawy-sync-config.js" defer></script>
+  <script src="assets/softwarezawy-data.js" defer></script>
+  <script src="assets/softwarezawy-store.js" defer></script>
+  <script src="assets/softwarezawy-cart.js" defer></script>
+</head>
+<body>
+  <header class="site-header" data-header></header>
+  <div class="drawer" data-drawer></div>
+  <main class="page-shell">
+    <p class="eyebrow">Checkout</p>
+    <h1 data-i18n-ar="السلة والدفع" data-i18n-en="Cart and checkout">السلة والدفع</h1>
+    <div class="cart-layout">
+      <section class="stack" data-cart-items></section>
+      <aside class="stack">
+        <div class="cart-box" data-cart-summary></div>
+        <form class="form-panel" data-order-form>
+          <h2 data-i18n-ar="بيانات الطلب" data-i18n-en="Order details">بيانات الطلب</h2>
+          <label><span data-i18n-ar="الاسم" data-i18n-en="Name">الاسم</span><input name="name" required></label>
+          <label><span data-i18n-ar="الهاتف" data-i18n-en="Phone">الهاتف</span><input name="phone" required inputmode="tel"></label>
+          <label><span data-i18n-ar="البريد الإلكتروني" data-i18n-en="Email">البريد الإلكتروني</span><input name="email" type="email"></label>
+          <label><span data-i18n-ar="ملاحظات" data-i18n-en="Notes">ملاحظات</span><textarea name="notes" placeholder="اذكر البريد المراد التفعيل عليه أو أي تفاصيل مهمة" data-i18n-placeholder-ar="اذكر البريد المراد التفعيل عليه أو أي تفاصيل مهمة" data-i18n-placeholder-en="Mention the email to activate on or any important details"></textarea></label>
+          <button class="btn primary" type="submit" data-i18n-ar="إرسال الطلب على واتساب" data-i18n-en="Send order on WhatsApp">إرسال الطلب على واتساب</button>
+        </form>
+      </aside>
+    </div>
+  </main>
+</body>
+</html>
