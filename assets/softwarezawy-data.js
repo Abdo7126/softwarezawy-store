@@ -292,7 +292,11 @@ function szGetSyncConfig() {
     enabled: Boolean(localConfig.enabled ?? globalConfig.enabled),
     endpoint: String(localConfig.endpoint || globalConfig.endpoint || "").trim(),
     token: String(localConfig.token || "").trim(),
-    timeoutMs: Number(localConfig.timeoutMs || globalConfig.timeoutMs || 4500)
+    timeoutMs: Number(localConfig.timeoutMs || globalConfig.timeoutMs || 4500),
+    autoPull: localConfig.autoPull ?? globalConfig.autoPull ?? true,
+    pullIntervalMs: Number(localConfig.pullIntervalMs || globalConfig.pullIntervalMs || 60000),
+    useJsonp: localConfig.useJsonp ?? globalConfig.useJsonp ?? true,
+    noCorsPost: localConfig.noCorsPost ?? globalConfig.noCorsPost ?? true
   };
 }
 
@@ -301,7 +305,11 @@ function szSaveSyncConfig(config) {
     enabled: config.enabled === true || config.enabled === "true",
     endpoint: String(config.endpoint || "").trim(),
     token: String(config.token || "").trim(),
-    timeoutMs: Number(config.timeoutMs || 4500)
+    timeoutMs: Number(config.timeoutMs || 4500),
+    autoPull: config.autoPull !== false && config.autoPull !== "false",
+    pullIntervalMs: Number(config.pullIntervalMs || 60000),
+    useJsonp: config.useJsonp !== false && config.useJsonp !== "false",
+    noCorsPost: config.noCorsPost !== false && config.noCorsPost !== "false"
   }, { sync: false });
 }
 
@@ -322,14 +330,21 @@ function szCloudSnapshot(keys = SZ_CLOUD_ADMIN_KEYS) {
 }
 
 function szApplyCloudSnapshot(data = {}) {
+  let changed = false;
   Object.entries(data).forEach(([remoteKey, value]) => {
     const localKey = szCloudLocalKey(remoteKey);
     if (!localKey) return;
     const normalized = remoteKey === "settings"
       ? { ...SOFTWAREZAWY_DEFAULTS.settings, ...(value || {}) }
       : value;
-    localStorage.setItem(localKey, JSON.stringify(normalized));
+    const next = JSON.stringify(normalized);
+    if (localStorage.getItem(localKey) !== next) {
+      localStorage.setItem(localKey, next);
+      changed = true;
+    }
   });
+  if (changed) document.dispatchEvent(new CustomEvent("softwarezawy:sync-updated", { detail: data }));
+  return changed;
 }
 
 async function szCloudFetchJson(url, options = {}, timeoutMs = 4500) {
@@ -358,6 +373,15 @@ function szCloudUrl(params = {}) {
 async function szCloudPost(body) {
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config)) return { skipped: true };
+  if (config.noCorsPost) {
+    await fetch(config.endpoint, {
+      method: "POST",
+      mode: "no-cors",
+      headers: { "Content-Type": "text/plain;charset=utf-8" },
+      body: JSON.stringify(body)
+    });
+    return { ok: true, opaque: true };
+  }
   return szCloudFetchJson(config.endpoint, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
@@ -365,16 +389,47 @@ async function szCloudPost(body) {
   }, config.timeoutMs);
 }
 
+function szCloudGetJsonp(params = {}) {
+  const config = szGetSyncConfig();
+  return new Promise((resolve, reject) => {
+    const callbackName = `__szSyncCallback_${Date.now()}_${Math.random().toString(36).slice(2)}`;
+    const script = document.createElement("script");
+    const timer = setTimeout(() => {
+      cleanup();
+      reject(new Error("Sync request timed out."));
+    }, config.timeoutMs);
+    const cleanup = () => {
+      clearTimeout(timer);
+      script.remove();
+      delete window[callbackName];
+    };
+    window[callbackName] = (payload) => {
+      cleanup();
+      if (payload?.ok === false) reject(new Error(payload.error || "Sync request failed."));
+      else resolve(payload || {});
+    };
+    script.onerror = () => {
+      cleanup();
+      reject(new Error("Sync request failed."));
+    };
+    script.src = szCloudUrl({ ...params, callback: callbackName });
+    document.head.appendChild(script);
+  });
+}
+
 async function szPullCloudSync(options = {}) {
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config)) return { skipped: true };
   try {
     const adminScope = options.admin === true || (szIsAdminPage() && Boolean(config.token));
-    const result = await szCloudFetchJson(szCloudUrl({
+    const params = {
       action: "read",
       scope: adminScope ? "admin" : "public",
       token: adminScope ? config.token : ""
-    }), {}, config.timeoutMs);
+    };
+    const result = config.useJsonp
+      ? await szCloudGetJsonp(params)
+      : await szCloudFetchJson(szCloudUrl(params), {}, config.timeoutMs);
     szApplyCloudSnapshot(result.data || {});
     return { ok: true, updatedAt: result.updatedAt || "" };
   } catch (error) {
@@ -413,6 +468,16 @@ function szOnReady(callback) {
   const run = () => szWaitForSync().finally(callback);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", run);
   else run();
+}
+
+function szStartAutoSync() {
+  const config = szGetSyncConfig();
+  if (!szCloudAvailable(config) || !config.autoPull || window.szAutoSyncTimer) return;
+  const interval = Math.max(15000, Number(config.pullIntervalMs || 60000));
+  window.szAutoSyncTimer = setInterval(() => {
+    if (document.hidden) return;
+    szPullCloudSync({ silent: true });
+  }, interval);
 }
 
 function szGetSettings() {
@@ -573,4 +638,5 @@ function szEnsureDefaults() {
 
 szEnsureDefaults();
 window.szSyncReady = szPullCloudSync();
+szStartAutoSync();
 szInitChrome();

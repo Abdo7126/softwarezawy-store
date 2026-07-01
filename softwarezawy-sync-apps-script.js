@@ -9,14 +9,14 @@ function doGet(event) {
   const data = szReadStore();
 
   if (scope === "admin" && params.token !== SZ_SYNC_TOKEN) {
-    return szJson({ ok: false, error: "Invalid sync token." });
+    return szJson({ ok: false, error: "Invalid sync token." }, params.callback);
   }
 
   return szJson({
     ok: true,
     data: szPick(data, scope === "admin" ? SZ_ADMIN_KEYS : SZ_PUBLIC_KEYS),
     updatedAt: data.updatedAt || ""
-  });
+  }, params.callback);
 }
 
 function doPost(event) {
@@ -74,7 +74,12 @@ function szPick(data, keys) {
   return output;
 }
 
-function szJson(payload) {
+function szJson(payload, callback) {
+  if (callback && /^[A-Za-z_$][\w.$]*$/.test(callback)) {
+    return ContentService
+      .createTextOutput(`${callback}(${JSON.stringify(payload)});`)
+      .setMimeType(ContentService.MimeType.JAVASCRIPT);
+  }
   return ContentService
     .createTextOutput(JSON.stringify(payload))
     .setMimeType(ContentService.MimeType.JSON);

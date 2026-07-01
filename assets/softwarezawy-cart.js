@@ -152,6 +152,10 @@ function szSubmitOrder(event) {
   location.href = "softwarezawy-store.html";
 }
 
+document.addEventListener("softwarezawy:sync-updated", () => {
+  if (document.querySelector("[data-cart-items]")) szRenderCart();
+});
+
 szOnReady(() => {
   szRenderCart();
   szBindCart();

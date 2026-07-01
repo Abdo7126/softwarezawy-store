@@ -1,5 +1,9 @@
 window.SOFTWAREZAWY_CLOUD_SYNC = {
   enabled: true,
-endpoint: "https://script.google.com/macros/s/AKfycbwzM5578z_4cqZ1FnTN3Qh-7ourqAkxjF6BbXiJ738BNowx5MbjqNSqKon3C0NFnFZT/exec",
-  timeoutMs: 4500
+  endpoint: "https://script.google.com/macros/s/AKfycbxsTVsZy37m25D5iHH1WZiua_AvQOjk1RLv7AcSQ4BMYD-TtmhHAGuvUBOtMlka-xK0/exec",
+  timeoutMs: 4500,
+  autoPull: true,
+  pullIntervalMs: 60000,
+  useJsonp: true,
+  noCorsPost: true
 };

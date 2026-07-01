@@ -347,6 +347,19 @@ function szRenderStorePage() {
   render();
 }
 
+function szRefreshVisibleStorePage() {
+  szMountHeader();
+  szMountDrawer();
+  if (document.querySelector("[data-home-hero]")) szRenderHome();
+  if (document.querySelector("[data-section-head]")) szRenderSectionPage();
+  if (document.querySelector("[data-store-products]")) szRenderStorePage();
+  szUpdateCartCount();
+}
+
+document.addEventListener("softwarezawy:sync-updated", () => {
+  if (document.querySelector("[data-header]")) szRefreshVisibleStorePage();
+});
+
 szOnReady(() => {
   szInitMetaPixel();
   szMountHeader();

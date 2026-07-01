@@ -925,6 +925,11 @@ function szRenderManagersAdmin() {
   main.innerHTML = `<p class="eyebrow">Managers</p><h1>المديرين</h1><div class="table-wrap"><table><thead><tr><th>المستخدم</th><th>الصلاحية</th></tr></thead><tbody>${managers.map((m) => `<tr><td>${m.username}</td><td>${m.role}</td></tr>`).join("")}</tbody></table></div><div class="notice" style="margin-top:18px">الدخول المحلي للتجربة فقط، وليس نظام صلاحيات حقيقي لموقع إنتاجي.</div>`;
 }
 
+document.addEventListener("softwarezawy:sync-updated", () => {
+  if (location.pathname.endsWith("softwarezawy-admin-dashboard.html")) szRenderDashboard();
+  if (location.pathname.endsWith("softwarezawy-admin-orders.html")) szRenderOrdersAdmin();
+});
+
 szOnReady(() => {
   szAdminRequire();
   szBindLogin();
