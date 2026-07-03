@@ -535,6 +535,8 @@ function szInvoiceFromOrder(order) {
     customerPhone: order.customer?.phone || "",
     customerEmail: order.customer?.email || "",
     customerAddress: order.customer?.notes || "",
+    paymentMethod: order.payment?.method || order.paymentMethod || base.paymentMethod,
+    paymentReference: order.payment?.reference || order.paymentReference || "",
     statusLabel: szOrderStatusLabel(order.status || "confirmed"),
     stampText: "تم التأكيد",
     itemsText: itemsText || base.itemsText,
@@ -562,18 +564,19 @@ function szInvoiceDocumentHtml(invoiceData, documentTitle) {
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <base href="${szEscapeHtml(baseHref)}">
   <title>${szEscapeHtml(title)}</title>
-  <link rel="stylesheet" href="assets/softwarezawy-site.css?v=20260703-2">
+  <link rel="stylesheet" href="assets/softwarezawy-site.css?v=20260703-3">
   <style>
+    html, body { margin:0; }
     body.invoice-download-page { background:#eef5f7; padding:18px; }
     .invoice-download-shell { width:min(100%, 210mm); margin:0 auto; }
     .invoice-download-actions { display:flex; justify-content:flex-end; gap:10px; margin-bottom:12px; }
     .invoice-download-actions button { border:0; border-radius:8px; padding:10px 14px; background:#10202b; color:#fff; font:700 14px system-ui; cursor:pointer; }
     .invoice-download-shell .invoice-paper { margin:auto; }
-    @page { size:A4; margin:8mm; }
+    @page { size:A4; margin:0; }
     @media print {
       body.invoice-download-page { padding:0 !important; background:#fff !important; }
       .invoice-download-actions { display:none !important; }
-      .invoice-download-shell { width:100% !important; margin:0 !important; }
+      .invoice-download-shell { width:210mm !important; margin:0 !important; }
     }
   </style>
 </head>
@@ -601,14 +604,36 @@ function szDownloadOrderInvoice(order) {
   setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
 }
 
-function szConfirmOrder(orderId) {
+function szCollectOrderPayment(order) {
+  const currentMethod = order.payment?.method || order.paymentMethod || "فودافون كاش";
+  const method = prompt(`طريقة الدفع للطلب ${order.id}:`, currentMethod);
+  if (method === null) return null;
+  const cleanMethod = method.trim();
+  if (!cleanMethod) {
+    alert("اكتب طريقة الدفع قبل تأكيد الطلب.");
+    return null;
+  }
+  const currentReference = order.payment?.reference || order.paymentReference || "";
+  const reference = prompt("اكتب كود الدفع أو رقم الهاتف الذي تم الدفع منه:", currentReference);
+  if (reference === null) return null;
+  return {
+    method: cleanMethod,
+    reference: reference.trim()
+  };
+}
+
+function szConfirmOrder(orderId, payment = {}) {
   const orders = szGetOrders();
   const index = orders.findIndex((order) => order.id === orderId);
   if (index < 0) return false;
   orders[index] = {
     ...orders[index],
     status: "confirmed",
-    confirmedAt: orders[index].confirmedAt || new Date().toISOString()
+    confirmedAt: orders[index].confirmedAt || new Date().toISOString(),
+    payment: {
+      method: payment.method || orders[index].payment?.method || orders[index].paymentMethod || "",
+      reference: payment.reference || orders[index].payment?.reference || orders[index].paymentReference || ""
+    }
   };
   szWrite(SZ_KEYS.orders, orders);
   return true;
@@ -670,8 +695,12 @@ function szRenderOrdersAdmin() {
     const confirmBtn = event.target.closest("[data-confirm-order]");
     if (confirmBtn) {
       const orderId = confirmBtn.dataset.confirmOrder;
-      if (!confirm(`تأكيد الطلب ${orderId}؟ بعد التأكيد سيظهر زر تحميل الفاتورة.`)) return;
-      if (szConfirmOrder(orderId)) render();
+      const order = szGetOrders().find((item) => item.id === orderId);
+      if (!order) return;
+      const payment = szCollectOrderPayment(order);
+      if (!payment) return;
+      if (!confirm(`تأكيد الطلب ${orderId} بطريقة دفع ${payment.method}؟ بعد التأكيد سيظهر زر تحميل الفاتورة.`)) return;
+      if (szConfirmOrder(orderId, payment)) render();
     }
     const downloadBtn = event.target.closest("[data-download-order-invoice]");
     if (downloadBtn) {
@@ -710,6 +739,7 @@ function szDefaultInvoice() {
     customerEmail: "",
     customerAddress: "",
     paymentMethod: "فودافون كاش / إنستاباي / تحويل بنكي",
+    paymentReference: "",
     statusLabel: "مطلوب السداد",
     accentColor: "#31d7ff",
     secondaryColor: "#76ff91",
@@ -796,6 +826,13 @@ function szParseInvoiceItems(text) {
 function szInvoicePreview(invoiceData) {
   const invoice = szNormalizeInvoice(invoiceData);
   const items = szParseInvoiceItems(invoice.itemsText);
+  const densityClass = items.length > 16
+    ? "invoice-items-overflow"
+    : items.length > 10
+      ? "invoice-items-dense"
+      : items.length > 5
+        ? "invoice-items-many"
+        : "invoice-items-regular";
   const subtotal = items.reduce((sum, item) => sum + item.total, 0);
   const discount = invoice.discount;
   const tax = invoice.tax;
@@ -822,7 +859,7 @@ function szInvoicePreview(invoiceData) {
     </tr>
   `).join("") : `<tr><td colspan="5">لا توجد بنود في الفاتورة.</td></tr>`;
   return `
-    <article class="invoice-paper invoice-${invoice.headerStyle}" style="${style}">
+    <article class="invoice-paper invoice-${invoice.headerStyle} ${densityClass}" style="${style}">
       ${invoice.watermarkText ? `<span class="invoice-watermark">${szEscapeHtml(invoice.watermarkText)}</span>` : ""}
       <header class="invoice-header">
         <div class="invoice-brand">
@@ -864,6 +901,7 @@ function szInvoicePreview(invoiceData) {
         <div class="invoice-payment">
           <span>طريقة الدفع</span>
           <strong>${szEscapeHtml(invoice.paymentMethod)}</strong>
+          ${invoice.paymentReference ? `<small class="invoice-payment-reference">كود/رقم الدفع: ${szEscapeHtml(invoice.paymentReference)}</small>` : ""}
           <p>${szEscapeHtml(invoice.notes)}</p>
         </div>
         <section class="invoice-total">
@@ -907,6 +945,7 @@ function szRenderInvoiceAdmin() {
         <label>هاتف العميل<input name="customerPhone" value="${szEscapeHtml(invoice.customerPhone)}"></label>
         <label>بريد العميل<input name="customerEmail" value="${szEscapeHtml(invoice.customerEmail)}"></label>
         <label>طريقة الدفع<input name="paymentMethod" value="${szEscapeHtml(invoice.paymentMethod)}"></label>
+        <label>كود/رقم الدفع<input name="paymentReference" value="${szEscapeHtml(invoice.paymentReference || "")}"></label>
         <label class="full">عنوان/ملاحظات العميل<textarea name="customerAddress">${szEscapeHtml(invoice.customerAddress)}</textarea></label>
 
         <div class="form-section full"><h3>البنود والحساب</h3></div>
