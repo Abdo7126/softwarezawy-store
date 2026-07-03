@@ -50,19 +50,164 @@ function szBindLogin() {
   });
 }
 
+function szOrderIsConfirmed(order) {
+  return ["confirmed", "paid", "done"].includes(order?.status);
+}
+
+function szDashboardDayKey(date) {
+  return date.toISOString().slice(0, 10);
+}
+
+function szDashboardSalesByDay(orders, daysCount = 7) {
+  const today = new Date();
+  const days = Array.from({ length: daysCount }, (_, index) => {
+    const date = new Date(today);
+    date.setDate(today.getDate() - (daysCount - index - 1));
+    const key = szDashboardDayKey(date);
+    return {
+      key,
+      label: date.toLocaleDateString("ar-EG", { weekday: "short", day: "numeric" }),
+      total: 0
+    };
+  });
+  const byKey = Object.fromEntries(days.map((day) => [day.key, day]));
+  orders.filter(szOrderIsConfirmed).forEach((order) => {
+    const date = new Date(order.confirmedAt || order.createdAt || Date.now());
+    if (Number.isNaN(date.getTime())) return;
+    const day = byKey[szDashboardDayKey(date)];
+    if (day) day.total += Number(order.total || 0);
+  });
+  return days;
+}
+
+function szDashboardTopItems(orders) {
+  const totals = new Map();
+  orders.filter(szOrderIsConfirmed).forEach((order) => {
+    (order.items || []).forEach((item) => {
+      const name = item.nameAr || item.nameEn || "خدمة";
+      const current = totals.get(name) || { name, qty: 0, total: 0 };
+      current.qty += Number(item.qty || 1);
+      current.total += Number(item.total || (Number(item.price || 0) * Number(item.qty || 1)));
+      totals.set(name, current);
+    });
+  });
+  return Array.from(totals.values()).sort((a, b) => b.total - a.total).slice(0, 5);
+}
+
+function szDashboardSalesChart(days) {
+  const max = Math.max(...days.map((day) => day.total), 1);
+  return `
+    <article class="dashboard-panel">
+      <div class="dashboard-panel-head">
+        <div><p class="eyebrow">Sales</p><h3>المبيعات آخر 7 أيام</h3></div>
+        <strong>${szMoney(days.reduce((sum, day) => sum + day.total, 0))}</strong>
+      </div>
+      <div class="dashboard-bars">
+        ${days.map((day) => `
+          <div class="dashboard-bar-row">
+            <span>${szEscapeHtml(day.label)}</span>
+            <div class="dashboard-bar-track"><i style="inline-size:${Math.max(day.total ? 8 : 0, (day.total / max) * 100)}%"></i></div>
+            <strong>${szMoney(day.total)}</strong>
+          </div>
+        `).join("")}
+      </div>
+    </article>
+  `;
+}
+
+function szDashboardTopItemsChart(items) {
+  const max = Math.max(...items.map((item) => item.total), 1);
+  return `
+    <article class="dashboard-panel">
+      <div class="dashboard-panel-head">
+        <div><p class="eyebrow">Products</p><h3>أكثر الاشتراكات مبيعا</h3></div>
+      </div>
+      <div class="dashboard-top-list">
+        ${items.length ? items.map((item) => `
+          <div class="dashboard-top-item">
+            <div>
+              <strong>${szEscapeHtml(item.name)}</strong>
+              <span>${Number(item.qty || 0).toLocaleString("ar-EG")} مبيعات</span>
+            </div>
+            <div class="dashboard-bar-track"><i style="inline-size:${Math.max(8, (item.total / max) * 100)}%"></i></div>
+            <b>${szMoney(item.total)}</b>
+          </div>
+        `).join("") : `<div class="empty compact-empty">لا توجد مبيعات مؤكدة بعد.</div>`}
+      </div>
+    </article>
+  `;
+}
+
+function szDashboardStatusChart(orders) {
+  const colors = {
+    new: "#31d7ff",
+    pending: "#f8c14a",
+    confirmed: "#76ff91",
+    paid: "#8dd8ff",
+    done: "#a4ffce",
+    cancelled: "#ff6b7a"
+  };
+  const entries = ["new", "pending", "confirmed", "paid", "done", "cancelled"]
+    .map((status) => ({ status, label: szOrderStatusLabel(status), count: orders.filter((order) => (order.status || "new") === status).length, color: colors[status] }))
+    .filter((item) => item.count);
+  const total = Math.max(orders.length, 1);
+  let cursor = 0;
+  const gradient = entries.length ? entries.map((entry) => {
+    const start = cursor;
+    cursor += (entry.count / total) * 100;
+    return `${entry.color} ${start}% ${cursor}%`;
+  }).join(", ") : "#253541 0 100%";
+  return `
+    <article class="dashboard-panel dashboard-status-panel">
+      <div class="dashboard-panel-head">
+        <div><p class="eyebrow">Status</p><h3>حالة الطلبات</h3></div>
+      </div>
+      <div class="dashboard-status-chart">
+        <div class="dashboard-donut" style="background: conic-gradient(${gradient})">
+          <div><span>${orders.length.toLocaleString("ar-EG")}</span><small>طلب</small></div>
+        </div>
+        <div class="dashboard-legend">
+          ${entries.length ? entries.map((entry) => `
+            <div><i style="background:${entry.color}"></i><span>${szEscapeHtml(entry.label)}</span><strong>${entry.count.toLocaleString("ar-EG")}</strong></div>
+          `).join("") : `<p>لا توجد طلبات محفوظة حاليا.</p>`}
+        </div>
+      </div>
+    </article>
+  `;
+}
+
 function szRenderDashboard() {
   szAdminShell("dashboard");
   const main = document.querySelector("[data-admin-main]");
   const orders = szGetOrders();
   const products = szGetProducts();
   const sections = szGetSections();
+  const confirmedOrders = orders.filter(szOrderIsConfirmed);
+  const confirmedSales = confirmedOrders.reduce((sum, order) => sum + Number(order.total || 0), 0);
+  const pendingOrders = orders.filter((order) => !szOrderIsConfirmed(order) && order.status !== "cancelled").length;
+  const averageOrder = confirmedOrders.length ? confirmedSales / confirmedOrders.length : 0;
+  const discounts = confirmedOrders.reduce((sum, order) => sum + Number(order.discount || 0), 0);
+  const salesDays = szDashboardSalesByDay(orders);
+  const topItems = szDashboardTopItems(orders);
   main.innerHTML = `
-    <p class="eyebrow">Dashboard</p>
-    <h1>لوحة التحكم</h1>
-    <div class="admin-grid">
-      <article class="admin-card"><h3>الطلبات</h3><strong class="price">${orders.length}</strong><p>طلبات محفوظة محليا على هذا المتصفح.</p></article>
-      <article class="admin-card"><h3>الاشتراكات</h3><strong class="price">${products.length}</strong><p>منتجات AI قابلة للتعديل.</p></article>
-      <article class="admin-card"><h3>أقسام الرئيسية</h3><strong class="price">${sections.length}</strong><p>يمكن زيادتها من التعديل البصري.</p></article>
+    <div class="toolbar dashboard-toolbar">
+      <div><p class="eyebrow">Dashboard</p><h1>لوحة التحكم</h1></div>
+      <a class="btn ghost" href="softwarezawy-admin-orders.html">متابعة الطلبات</a>
+    </div>
+    <div class="admin-grid dashboard-stats">
+      <article class="admin-card"><h3>المبيعات المؤكدة</h3><strong class="price">${szMoney(confirmedSales)}</strong><p>إجمالي الطلبات بعد الضغط على زر التأكيد.</p></article>
+      <article class="admin-card"><h3>طلبات مؤكدة</h3><strong class="price">${confirmedOrders.length.toLocaleString("ar-EG")}</strong><p>طلبات جاهزة لتنزيل الفاتورة والمتابعة.</p></article>
+      <article class="admin-card"><h3>طلبات بانتظار التأكيد</h3><strong class="price">${pendingOrders.toLocaleString("ar-EG")}</strong><p>طلبات جديدة أو قيد المتابعة لم تدخل المبيعات بعد.</p></article>
+      <article class="admin-card"><h3>متوسط الطلب</h3><strong class="price">${szMoney(averageOrder)}</strong><p>متوسط قيمة الطلبات المؤكدة.</p></article>
+      <article class="admin-card"><h3>إجمالي الخصومات</h3><strong class="price">${szMoney(discounts)}</strong><p>خصومات كوبونات على الطلبات المؤكدة.</p></article>
+      <article class="admin-card"><h3>الاشتراكات</h3><strong class="price">${products.length.toLocaleString("ar-EG")}</strong><p>منتجات AI قابلة للتعديل.</p></article>
+      <article class="admin-card"><h3>أقسام الرئيسية</h3><strong class="price">${sections.length.toLocaleString("ar-EG")}</strong><p>يمكن زيادتها من التعديل البصري.</p></article>
+      <article class="admin-card"><h3>كل الطلبات</h3><strong class="price">${orders.length.toLocaleString("ar-EG")}</strong><p>إجمالي الطلبات المحفوظة في لوحة الأدمن.</p></article>
+    </div>
+    <div class="dashboard-charts">
+      ${szDashboardSalesChart(salesDays)}
+      ${szDashboardTopItemsChart(topItems)}
+      ${szDashboardStatusChart(orders)}
     </div>
     <div class="notice" style="margin-top:18px">تنبيه: لأن الموقع Static، تعديلات الأدمن محفوظة في localStorage على هذا الجهاز فقط إلا لو تم نقلها إلى ملف البيانات قبل الرفع.</div>
   `;
@@ -359,6 +504,7 @@ function szOrderStatusLabel(status) {
   const labels = {
     new: "جديد",
     pending: "قيد المتابعة",
+    confirmed: "تم التأكيد",
     paid: "مدفوع",
     done: "مكتمل",
     cancelled: "ملغي"
@@ -382,19 +528,90 @@ function szInvoiceFromOrder(order) {
   }).join("\n");
   return {
     ...base,
-    invoiceNo: `INV-${String(order.id || Date.now()).replace(/^SZ-?/i, "")}`,
-    date: new Date().toISOString().slice(0, 10),
+    title: "فاتورة طلب",
+    invoiceNo: String(order.id || Date.now()),
+    date: new Date(order.confirmedAt || order.createdAt || Date.now()).toISOString().slice(0, 10),
     customerName: order.customer?.name || base.customerName,
     customerPhone: order.customer?.phone || "",
     customerEmail: order.customer?.email || "",
     customerAddress: order.customer?.notes || "",
-    statusLabel: "فاتورة طلب",
-    stampText: "قابلة للتعديل",
+    statusLabel: szOrderStatusLabel(order.status || "confirmed"),
+    stampText: "تم التأكيد",
     itemsText: itemsText || base.itemsText,
     discount: Number(order.discount || 0),
     tax: 0,
     notes: `فاتورة مرتبطة بالطلب ${order.id}. شكرا لاختيارك SoftwareZawy. يتم تفعيل الاشتراك حسب الاتفاق وسياسة الخدمة.`
   };
+}
+
+function szSafeFileName(value) {
+  return String(value || "invoice")
+    .trim()
+    .replace(/[<>:"/\\|?*\x00-\x1F]+/g, "-")
+    .replace(/\s+/g, "-")
+    .slice(0, 90) || "invoice";
+}
+
+function szInvoiceDocumentHtml(invoiceData, documentTitle) {
+  const title = szSafeFileName(documentTitle || invoiceData.invoiceNo || "invoice");
+  const baseHref = new URL(".", location.href).href;
+  return `<!doctype html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <base href="${szEscapeHtml(baseHref)}">
+  <title>${szEscapeHtml(title)}</title>
+  <link rel="stylesheet" href="assets/softwarezawy-site.css?v=20260703-2">
+  <style>
+    body.invoice-download-page { background:#eef5f7; padding:18px; }
+    .invoice-download-shell { width:min(100%, 210mm); margin:0 auto; }
+    .invoice-download-actions { display:flex; justify-content:flex-end; gap:10px; margin-bottom:12px; }
+    .invoice-download-actions button { border:0; border-radius:8px; padding:10px 14px; background:#10202b; color:#fff; font:700 14px system-ui; cursor:pointer; }
+    .invoice-download-shell .invoice-paper { margin:auto; }
+    @page { size:A4; margin:8mm; }
+    @media print {
+      body.invoice-download-page { padding:0 !important; background:#fff !important; }
+      .invoice-download-actions { display:none !important; }
+      .invoice-download-shell { width:100% !important; margin:0 !important; }
+    }
+  </style>
+</head>
+<body class="invoice-download-page">
+  <main class="invoice-download-shell">
+    <div class="invoice-download-actions"><button type="button" onclick="window.print()">طباعة / حفظ PDF</button></div>
+    ${szInvoicePreview(invoiceData)}
+  </main>
+</body>
+</html>`;
+}
+
+function szDownloadOrderInvoice(order) {
+  const invoice = szInvoiceFromOrder(order);
+  szWrite(SZ_KEYS.invoice, invoice);
+  const fileName = `${szSafeFileName(order.id || invoice.invoiceNo)}.html`;
+  const blob = new Blob([szInvoiceDocumentHtml(invoice, order.id || invoice.invoiceNo)], { type: "text/html;charset=utf-8" });
+  const link = document.createElement("a");
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+function szConfirmOrder(orderId) {
+  const orders = szGetOrders();
+  const index = orders.findIndex((order) => order.id === orderId);
+  if (index < 0) return false;
+  orders[index] = {
+    ...orders[index],
+    status: "confirmed",
+    confirmedAt: orders[index].confirmedAt || new Date().toISOString()
+  };
+  szWrite(SZ_KEYS.orders, orders);
+  return true;
 }
 
 function szRenderOrdersAdmin() {
@@ -403,6 +620,7 @@ function szRenderOrdersAdmin() {
   const render = () => {
     const orders = szGetOrders();
     const rows = orders.map((order) => {
+      const confirmed = szOrderIsConfirmed(order);
       const items = (order.items || []).map((item) => {
         const name = item.nameAr || item.nameEn || "خدمة";
         return `${szEscapeHtml(name)} × ${szEscapeHtml(item.qty || 1)}`;
@@ -412,12 +630,16 @@ function szRenderOrdersAdmin() {
           <td><strong>${szEscapeHtml(order.id)}</strong><small>${szFormatOrderDate(order.createdAt)}</small></td>
           <td>${szEscapeHtml(order.customer?.name || "-")}</td>
           <td>${szEscapeHtml(order.customer?.phone || "-")}</td>
+          <td>${szEscapeHtml(order.customer?.email || "-")}</td>
           <td class="order-items">${items || "-"}</td>
           <td>${szMoney(order.total)}</td>
           <td><span class="status-pill">${szEscapeHtml(szOrderStatusLabel(order.status))}</span></td>
           <td>
             <div class="row-actions">
-              <button class="btn ghost" type="button" data-invoice-order="${szEscapeHtml(order.id)}">فاتورة</button>
+              ${confirmed ? `
+                <button class="btn primary" type="button" data-download-order-invoice="${szEscapeHtml(order.id)}">تحميل الفاتورة</button>
+                <button class="btn ghost" type="button" data-invoice-order="${szEscapeHtml(order.id)}">فتح</button>
+              ` : `<button class="btn primary" type="button" data-confirm-order="${szEscapeHtml(order.id)}">تأكيد</button>`}
               <button class="btn danger" type="button" data-delete-order="${szEscapeHtml(order.id)}">حذف</button>
             </div>
           </td>
@@ -432,7 +654,7 @@ function szRenderOrdersAdmin() {
       ${orders.length ? `
         <div class="table-wrap">
           <table class="orders-table">
-            <thead><tr><th>رقم الطلب</th><th>العميل</th><th>الهاتف</th><th>الاشتراكات</th><th>الإجمالي</th><th>الحالة</th><th>إجراء</th></tr></thead>
+            <thead><tr><th>رقم الطلب</th><th>العميل</th><th>الهاتف</th><th>البريد</th><th>الاشتراكات</th><th>الإجمالي</th><th>الحالة</th><th>إجراء</th></tr></thead>
             <tbody>${rows}</tbody>
           </table>
         </div>
@@ -444,6 +666,17 @@ function szRenderOrdersAdmin() {
     if (clearBtn && !clearBtn.disabled && confirm("حذف كل الطلبات المحفوظة؟")) {
       szWrite(SZ_KEYS.orders, []);
       render();
+    }
+    const confirmBtn = event.target.closest("[data-confirm-order]");
+    if (confirmBtn) {
+      const orderId = confirmBtn.dataset.confirmOrder;
+      if (!confirm(`تأكيد الطلب ${orderId}؟ بعد التأكيد سيظهر زر تحميل الفاتورة.`)) return;
+      if (szConfirmOrder(orderId)) render();
+    }
+    const downloadBtn = event.target.closest("[data-download-order-invoice]");
+    if (downloadBtn) {
+      const order = szGetOrders().find((item) => item.id === downloadBtn.dataset.downloadOrderInvoice);
+      if (order) szDownloadOrderInvoice(order);
     }
     const invoiceBtn = event.target.closest("[data-invoice-order]");
     if (invoiceBtn) {
@@ -912,10 +1145,153 @@ function szRenderSettingsAdmin() {
   });
 }
 
+function szNormalizeCouponCode(value) {
+  return String(value || "")
+    .trim()
+    .replace(/\s+/g, "")
+    .toUpperCase();
+}
+
+function szCouponTypeLabel(type) {
+  return type === "fixed" ? "خصم مبلغ ثابت" : "خصم نسبة مئوية";
+}
+
+function szCouponValueLabel(coupon) {
+  const value = Number(coupon.value || 0);
+  return coupon.type === "fixed" ? szMoney(value) : `${value.toLocaleString("ar-EG")}%`;
+}
+
 function szRenderCouponsAdmin() {
   szAdminShell("coupons");
   const main = document.querySelector("[data-admin-main]");
-  main.innerHTML = `<p class="eyebrow">Coupons</p><h1>الكوبونات</h1><div class="notice">الكوبونات الافتراضية محفوظة في البيانات. الكوبون التجريبي الحالي: AI10 خصم 10%.</div>`;
+  main.innerHTML = `
+    <div class="toolbar">
+      <div><p class="eyebrow">Coupons</p><h1>الكوبونات</h1></div>
+      <button class="btn primary" type="button" data-new-coupon>كوبون جديد</button>
+    </div>
+    <div class="notice" style="margin-bottom:18px">الكوبونات هنا تتطبق مباشرة في صفحة السلة. اختار نسبة مئوية مثل AI10 أو مبلغ ثابت حسب العرض المطلوب.</div>
+    <div class="coupon-summary" data-coupon-summary></div>
+    <div class="table-wrap" style="margin-top:18px">
+      <table class="coupons-table">
+        <thead><tr><th>الكود</th><th>نوع الخصم</th><th>القيمة</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <tbody data-coupons-table></tbody>
+      </table>
+    </div>
+    <form class="form-panel form-grid" data-coupon-form style="margin-top:18px;display:none"></form>
+  `;
+
+  const renderTable = () => {
+    const coupons = szGetCoupons();
+    const activeCount = coupons.filter((coupon) => coupon.active).length;
+    document.querySelector("[data-coupon-summary]").innerHTML = `
+      <article class="admin-card"><h3>كل الكوبونات</h3><strong class="price">${coupons.length.toLocaleString("ar-EG")}</strong><p>كوبونات محفوظة وقابلة للتعديل.</p></article>
+      <article class="admin-card"><h3>الكوبونات الفعالة</h3><strong class="price">${activeCount.toLocaleString("ar-EG")}</strong><p>تظهر للعملاء عند إدخال الكود في السلة.</p></article>
+    `;
+    document.querySelector("[data-coupons-table]").innerHTML = coupons.length ? coupons.map((coupon) => `
+      <tr>
+        <td><strong>${szEscapeHtml(coupon.code)}</strong></td>
+        <td>${szEscapeHtml(szCouponTypeLabel(coupon.type))}</td>
+        <td>${szEscapeHtml(szCouponValueLabel(coupon))}</td>
+        <td><span class="status-pill">${coupon.active ? "فعال" : "متوقف"}</span></td>
+        <td>
+          <div class="row-actions">
+            <button class="btn ghost" type="button" data-edit-coupon="${szEscapeHtml(coupon.code)}">تعديل</button>
+            <button class="btn ghost" type="button" data-toggle-coupon="${szEscapeHtml(coupon.code)}">${coupon.active ? "تعطيل" : "تفعيل"}</button>
+            <button class="btn danger" type="button" data-delete-coupon="${szEscapeHtml(coupon.code)}">حذف</button>
+          </div>
+        </td>
+      </tr>
+    `).join("") : `<tr><td colspan="5">لا توجد كوبونات بعد. اضغط "كوبون جديد" لإضافة أول كوبون.</td></tr>`;
+  };
+
+  const openForm = (coupon = {}) => {
+    const form = document.querySelector("[data-coupon-form]");
+    form.style.display = "grid";
+    form.innerHTML = `
+      <input type="hidden" name="oldCode" value="${szEscapeHtml(coupon.code || "")}">
+      <div class="form-section full"><h3>${coupon.code ? "تعديل كوبون" : "كوبون جديد"}</h3></div>
+      <label>كود الكوبون<input name="code" value="${szEscapeHtml(coupon.code || "")}" placeholder="AI10" required></label>
+      <label>نوع الخصم
+        <select name="type">
+          <option value="percent" ${coupon.type === "fixed" ? "" : "selected"}>نسبة مئوية</option>
+          <option value="fixed" ${coupon.type === "fixed" ? "selected" : ""}>مبلغ ثابت</option>
+        </select>
+      </label>
+      <label>القيمة<input name="value" type="number" min="0" step="0.01" value="${Number(coupon.value || 0)}" required></label>
+      <label><input name="active" type="checkbox" ${coupon.active !== false ? "checked" : ""}> كوبون فعال</label>
+      <div class="toolbar full">
+        <button class="btn primary" type="submit">حفظ الكوبون</button>
+        <button class="btn ghost" type="button" data-cancel-coupon-form>إلغاء</button>
+      </div>
+    `;
+  };
+
+  main.addEventListener("click", (event) => {
+    const newBtn = event.target.closest("[data-new-coupon]");
+    if (newBtn) openForm({ code: "", type: "percent", value: 10, active: true });
+
+    const editBtn = event.target.closest("[data-edit-coupon]");
+    if (editBtn) {
+      const coupon = szGetCoupons().find((item) => item.code === editBtn.dataset.editCoupon);
+      if (coupon) openForm(coupon);
+    }
+
+    const toggleBtn = event.target.closest("[data-toggle-coupon]");
+    if (toggleBtn) {
+      const coupons = szGetCoupons().map((coupon) => coupon.code === toggleBtn.dataset.toggleCoupon ? { ...coupon, active: !coupon.active } : coupon);
+      szWrite(SZ_KEYS.coupons, coupons);
+      renderTable();
+    }
+
+    const deleteBtn = event.target.closest("[data-delete-coupon]");
+    if (deleteBtn) {
+      const code = deleteBtn.dataset.deleteCoupon;
+      if (!confirm(`حذف الكوبون ${code}؟`)) return;
+      szWrite(SZ_KEYS.coupons, szGetCoupons().filter((coupon) => coupon.code !== code));
+      renderTable();
+    }
+
+    const cancelBtn = event.target.closest("[data-cancel-coupon-form]");
+    if (cancelBtn) document.querySelector("[data-coupon-form]").style.display = "none";
+  });
+
+  main.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-coupon-form]");
+    if (!form) return;
+    event.preventDefault();
+    const data = Object.fromEntries(new FormData(form));
+    const code = szNormalizeCouponCode(data.code);
+    const oldCode = szNormalizeCouponCode(data.oldCode);
+    const value = Number(data.value || 0);
+    if (!code) {
+      alert("اكتب كود الكوبون.");
+      return;
+    }
+    if (Number.isNaN(value) || value <= 0) {
+      alert("قيمة الخصم لازم تكون أكبر من صفر.");
+      return;
+    }
+    if (data.type === "percent" && value > 100) {
+      alert("النسبة المئوية لا يمكن أن تكون أكبر من 100%.");
+      return;
+    }
+    const coupons = szGetCoupons().filter((coupon) => coupon.code !== oldCode);
+    if (coupons.some((coupon) => coupon.code === code)) {
+      alert("كود الكوبون موجود بالفعل.");
+      return;
+    }
+    coupons.push({
+      code,
+      type: data.type === "fixed" ? "fixed" : "percent",
+      value,
+      active: form.active.checked
+    });
+    szWrite(SZ_KEYS.coupons, coupons);
+    form.style.display = "none";
+    renderTable();
+  });
+
+  renderTable();
 }
 
 function szRenderManagersAdmin() {
@@ -928,6 +1304,7 @@ function szRenderManagersAdmin() {
 document.addEventListener("softwarezawy:sync-updated", () => {
   if (location.pathname.endsWith("softwarezawy-admin-dashboard.html")) szRenderDashboard();
   if (location.pathname.endsWith("softwarezawy-admin-orders.html")) szRenderOrdersAdmin();
+  if (location.pathname.endsWith("softwarezawy-admin-coupons.html")) szRenderCouponsAdmin();
 });
 
 szOnReady(() => {
