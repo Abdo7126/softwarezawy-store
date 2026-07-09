@@ -1128,6 +1128,21 @@ input[type="range"] {
   letter-spacing: .04em;
 }
 
+.coupon-message {
+  min-height: 22px;
+  color: var(--muted);
+  font-size: 13px;
+  font-weight: 800;
+}
+
+.coupon-message.active {
+  color: var(--accent-2);
+}
+
+.renewal-summary {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
 .invoice-preview {
   min-width: 0;
   position: sticky;

@@ -291,7 +291,7 @@ function szGetSyncConfig() {
   return {
     enabled: Boolean(localConfig.enabled ?? globalConfig.enabled),
     endpoint: String(localConfig.endpoint || globalConfig.endpoint || "").trim(),
-    token: String(localConfig.token || "").trim(),
+    token: String(localConfig.token || (szIsAdminPage() ? globalConfig.adminToken : "") || "").trim(),
     timeoutMs: Number(localConfig.timeoutMs || globalConfig.timeoutMs || 4500),
     autoPull: localConfig.autoPull ?? globalConfig.autoPull ?? true,
     pullIntervalMs: Number(localConfig.pullIntervalMs || globalConfig.pullIntervalMs || 60000),
@@ -329,6 +329,21 @@ function szCloudSnapshot(keys = SZ_CLOUD_ADMIN_KEYS) {
   }, {});
 }
 
+function szOrderTime(order = {}) {
+  const date = new Date(order.updatedAt || order.confirmedAt || order.createdAt || 0);
+  return Number.isNaN(date.getTime()) ? 0 : date.getTime();
+}
+
+function szMergeOrders(localOrders = [], remoteOrders = []) {
+  const byId = new Map();
+  [...remoteOrders, ...localOrders].forEach((order) => {
+    if (!order || !order.id) return;
+    const current = byId.get(order.id);
+    if (!current || szOrderTime(order) >= szOrderTime(current)) byId.set(order.id, order);
+  });
+  return Array.from(byId.values()).sort((a, b) => szOrderTime(b) - szOrderTime(a));
+}
+
 function szApplyCloudSnapshot(data = {}) {
   let changed = false;
   Object.entries(data).forEach(([remoteKey, value]) => {
@@ -336,7 +351,9 @@ function szApplyCloudSnapshot(data = {}) {
     if (!localKey) return;
     const normalized = remoteKey === "settings"
       ? { ...SOFTWAREZAWY_DEFAULTS.settings, ...(value || {}) }
-      : value;
+      : remoteKey === "orders"
+        ? szMergeOrders(szRead(SZ_KEYS.orders, []), Array.isArray(value) ? value : [])
+        : value;
     const next = JSON.stringify(normalized);
     if (localStorage.getItem(localKey) !== next) {
       localStorage.setItem(localKey, next);

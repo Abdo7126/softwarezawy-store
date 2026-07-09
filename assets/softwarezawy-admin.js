@@ -22,6 +22,7 @@ function szAdminShell(active) {
         <a href="softwarezawy-admin-dashboard.html">الرئيسية</a>
         <a href="softwarezawy-admin-products.html">الاشتراكات</a>
         <a href="softwarezawy-admin-orders.html">الطلبات</a>
+        <a href="softwarezawy-admin-renewals.html">التجديدات</a>
         <a href="softwarezawy-admin-invoice.html">الفاتورة</a>
         <a href="softwarezawy-admin-coupons.html">الكوبونات</a>
         <a href="softwarezawy-admin-visual.html">التعديل البصري</a>
@@ -322,7 +323,13 @@ function szRenderProductsAdmin() {
   const main = document.querySelector("[data-admin-main]");
   const sections = szGetSections();
   main.innerHTML = `
-    <div class="toolbar"><div><p class="eyebrow">Products</p><h1>الاشتراكات</h1></div><button class="btn primary" data-new-product>اشتراك جديد</button></div>
+    <div class="toolbar">
+      <div><p class="eyebrow">Products</p><h1>الاشتراكات</h1></div>
+      <div class="row-actions">
+        <button class="btn ghost" type="button" data-export-products>تصدير البيانات Excel</button>
+        <button class="btn primary" data-new-product>اشتراك جديد</button>
+      </div>
+    </div>
     <div class="table-wrap"><table><thead><tr><th>الاسم</th><th>القسم</th><th>الصورة</th><th>أول سعر</th><th>التخصيص</th><th>الحالة</th><th>إجراء</th></tr></thead><tbody data-products-table></tbody></table></div>
     <form class="form-panel" data-product-form style="margin-top:18px;display:none"></form>
   `;
@@ -349,6 +356,7 @@ function szRenderProductsAdmin() {
       `;
     }).join("");
   };
+  document.querySelector("[data-export-products]").addEventListener("click", szExportProductsSheet);
   const openForm = (product = {}) => {
     const form = document.querySelector("[data-product-form]");
     const options = szProductOptionsForAdmin(product);
@@ -455,6 +463,70 @@ function szEscapeHtml(value) {
     '"': "&quot;",
     "'": "&#039;"
   })[char]);
+}
+
+function szPlainText(value) {
+  const el = document.createElement("textarea");
+  el.innerHTML = String(value ?? "");
+  return el.value;
+}
+
+function szDownloadExcelSheet(fileName, columns, rows) {
+  const table = `
+    <table>
+      <thead><tr>${columns.map((column) => `<th>${szEscapeHtml(column)}</th>`).join("")}</tr></thead>
+      <tbody>
+        ${rows.map((row) => `<tr>${row.map((cell) => `<td>${szEscapeHtml(cell ?? "")}</td>`).join("")}</tr>`).join("")}
+      </tbody>
+    </table>
+  `;
+  const html = `<!doctype html><html><head><meta charset="utf-8"></head><body>${table}</body></html>`;
+  const blob = new Blob([html], { type: "application/vnd.ms-excel;charset=utf-8" });
+  const link = document.createElement("a");
+  const objectUrl = URL.createObjectURL(blob);
+  link.href = objectUrl;
+  link.download = `${szSafeFileName(fileName)}.xls`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  setTimeout(() => URL.revokeObjectURL(objectUrl), 1000);
+}
+
+function szExportProductsSheet() {
+  const sections = szGetSections();
+  const rows = szGetProducts().map((product) => {
+    const section = sections.find((item) => item.id === product.sectionId);
+    const options = szProductOptionsForAdmin(product).map((option) => `${option.labelAr || option.labelEn}: ${option.price}`).join(" | ");
+    return [
+      product.id,
+      product.nameAr || product.nameEn || "",
+      product.provider || "",
+      section?.titleAr || product.sectionId || "",
+      product.price || "",
+      product.oldPrice || "",
+      options,
+      product.active !== false ? "ظاهر" : "مخفي"
+    ];
+  });
+  szDownloadExcelSheet("softwarezawy-products", ["ID", "الاشتراك", "المزود", "القسم", "السعر", "قبل الخصم", "الخيارات", "الحالة"], rows);
+}
+
+function szExportOrdersSheet(orders = szGetOrders()) {
+  const rows = orders.map((order) => [
+    order.id,
+    szFormatOrderDate(order.createdAt),
+    order.customer?.name || "",
+    order.customer?.phone || "",
+    order.customer?.email || "",
+    (order.items || []).map((item) => `${item.nameAr || item.nameEn || "خدمة"} - ${item.optionLabel || ""} × ${item.qty || 1}`).join(" | "),
+    order.subtotal || "",
+    order.discount || 0,
+    order.total || "",
+    order.coupon || "",
+    szOrderStatusLabel(order.status),
+    order.customer?.notes || ""
+  ]);
+  szDownloadExcelSheet("softwarezawy-orders", ["رقم الطلب", "التاريخ", "العميل", "الهاتف", "البريد", "الاشتراكات", "قبل الخصم", "الخصم", "الإجمالي", "الكوبون", "الحالة", "ملاحظات"], rows);
 }
 
 function szBooleanSettingValue(value) {
@@ -629,6 +701,7 @@ function szConfirmOrder(orderId, payment = {}) {
   orders[index] = {
     ...orders[index],
     status: "confirmed",
+    updatedAt: new Date().toISOString(),
     confirmedAt: orders[index].confirmedAt || new Date().toISOString(),
     payment: {
       method: payment.method || orders[index].payment?.method || orders[index].paymentMethod || "",
@@ -637,6 +710,81 @@ function szConfirmOrder(orderId, payment = {}) {
   };
   szWrite(SZ_KEYS.orders, orders);
   return true;
+}
+
+function szFindMessageValue(lines, labels) {
+  const labelPattern = labels.map((label) => label.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")).join("|");
+  const regex = new RegExp(`(?:${labelPattern})\\s*[:：-]\\s*(.+)`, "i");
+  const found = lines.map((line) => line.match(regex)?.[1]?.trim()).find(Boolean);
+  return found || "";
+}
+
+function szParseMoney(value) {
+  const match = String(value || "").replace(/[,\u066C]/g, "").match(/\d+(?:[.,]\d+)?/);
+  return match ? Number(match[0].replace(",", ".")) : 0;
+}
+
+function szParseOrderItemsFromMessage(lines) {
+  const itemLines = lines.filter((line) => /^[-•*]\s*/.test(line) || /×|x|\bاشتراك\b|\bSubscription\b/i.test(line));
+  const parsed = itemLines.map((line) => {
+    const clean = line.replace(/^[-•*]\s*/, "").trim();
+    const qtyMatch = clean.match(/[×x]\s*(\d+)/i);
+    const price = szParseMoney(clean.split(":").pop());
+    const namePart = clean.split(/[(:|-]/)[0].trim() || clean;
+    return {
+      productId: "",
+      nameAr: namePart,
+      nameEn: namePart,
+      provider: clean.match(/\(([^)]+)\)/)?.[1] || "",
+      optionName: "المدة",
+      optionLabel: clean.match(/(?:المدة|Duration)\s*[:：]\s*([^×x:]+)/i)?.[1]?.trim() || "",
+      qty: qtyMatch ? Number(qtyMatch[1]) : 1,
+      price: price || 0,
+      total: price || 0
+    };
+  }).filter((item) => item.nameAr);
+  return parsed.length ? parsed : [{ productId: "", nameAr: "طلب يدوي", nameEn: "Manual order", provider: "SoftwareZawy", optionName: "المدة", optionLabel: "", qty: 1, price: 0, total: 0 }];
+}
+
+function szCreateOrderFromMessage(message) {
+  const lines = String(message || "").split(/\r?\n/).map((line) => line.trim()).filter(Boolean);
+  const items = szParseOrderItemsFromMessage(lines);
+  const total = szParseMoney(szFindMessageValue(lines, ["الإجمالي", "Total", "Final total"])) || items.reduce((sum, item) => sum + Number(item.total || 0), 0);
+  const discount = szParseMoney(szFindMessageValue(lines, ["الخصم", "Discount"]));
+  const id = lines.join(" ").match(/\bSZ-\d+\b/i)?.[0] || `SZ-${Date.now()}`;
+  return {
+    id,
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    customer: {
+      name: szFindMessageValue(lines, ["الاسم", "Name"]) || "عميل واتساب",
+      phone: szFindMessageValue(lines, ["الهاتف", "Phone", "موبايل", "رقم الهاتف"]),
+      email: szFindMessageValue(lines, ["البريد", "Email"]),
+      notes: szFindMessageValue(lines, ["ملاحظات", "Notes"]) || message
+    },
+    items,
+    coupon: (szFindMessageValue(lines, ["الكوبون", "Coupon"]).match(/[A-Z0-9_-]+/i)?.[0] || "").toUpperCase(),
+    subtotal: Math.max(total + discount, items.reduce((sum, item) => sum + Number(item.total || 0), 0)),
+    discount,
+    total,
+    status: "new",
+    source: "manual-message"
+  };
+}
+
+function szOpenManualOrderForm(order = null) {
+  const form = document.querySelector("[data-manual-order-form]");
+  if (!form) return;
+  form.style.display = "grid";
+  form.innerHTML = `
+    <div class="form-section full"><h3>إضافة طلب من رسالة</h3></div>
+    <label class="full">رسالة الطلب<textarea name="message" placeholder="الصق رسالة واتساب هنا...">${szEscapeHtml(order?.customer?.notes || "")}</textarea></label>
+    <div class="notice full">الصيغة المدعومة هي نفس رسالة الطلب من السلة: الاسم، الهاتف، البريد، الاشتراكات، الخصم، والإجمالي. لو البيانات ناقصة، هيتم حفظ الطلب كطلب يدوي ويمكنك الرجوع للرسالة داخل الملاحظات.</div>
+    <div class="toolbar full">
+      <button class="btn primary" type="submit">إنشاء الطلب</button>
+      <button class="btn ghost" type="button" data-cancel-manual-order>إلغاء</button>
+    </div>
+  `;
 }
 
 function szRenderOrdersAdmin() {
@@ -674,8 +822,13 @@ function szRenderOrdersAdmin() {
     main.innerHTML = `
       <div class="toolbar">
         <div><p class="eyebrow">Orders</p><h1>الطلبات</h1></div>
-        <button class="btn danger" type="button" data-clear-orders ${orders.length ? "" : "disabled"}>حذف كل الطلبات</button>
+        <div class="row-actions">
+          <button class="btn primary" type="button" data-open-manual-order>إضافة طلب</button>
+          <button class="btn ghost" type="button" data-export-orders ${orders.length ? "" : "disabled"}>تصدير الطلبات Excel</button>
+          <button class="btn danger" type="button" data-clear-orders ${orders.length ? "" : "disabled"}>حذف كل الطلبات</button>
+        </div>
       </div>
+      <form class="form-panel form-grid" data-manual-order-form style="margin-top:18px;display:none"></form>
       ${orders.length ? `
         <div class="table-wrap">
           <table class="orders-table">
@@ -687,6 +840,12 @@ function szRenderOrdersAdmin() {
     `;
   };
   main.addEventListener("click", (event) => {
+    const openManualBtn = event.target.closest("[data-open-manual-order]");
+    if (openManualBtn) szOpenManualOrderForm();
+    const exportBtn = event.target.closest("[data-export-orders]");
+    if (exportBtn && !exportBtn.disabled) szExportOrdersSheet();
+    const cancelManualBtn = event.target.closest("[data-cancel-manual-order]");
+    if (cancelManualBtn) document.querySelector("[data-manual-order-form]").style.display = "none";
     const clearBtn = event.target.closest("[data-clear-orders]");
     if (clearBtn && !clearBtn.disabled && confirm("حذف كل الطلبات المحفوظة؟")) {
       szWrite(SZ_KEYS.orders, []);
@@ -721,6 +880,22 @@ function szRenderOrdersAdmin() {
       szWrite(SZ_KEYS.orders, szGetOrders().filter((order) => order.id !== orderId));
       render();
     }
+  });
+  main.addEventListener("submit", (event) => {
+    const form = event.target.closest("[data-manual-order-form]");
+    if (!form) return;
+    event.preventDefault();
+    const message = new FormData(form).get("message");
+    if (!String(message || "").trim()) {
+      alert("الصق رسالة الطلب الأول.");
+      return;
+    }
+    const order = szCreateOrderFromMessage(message);
+    const orders = szGetOrders().filter((item) => item.id !== order.id);
+    orders.unshift(order);
+    szWrite(SZ_KEYS.orders, orders);
+    szCreateCloudOrder(order).catch((error) => console.warn("SoftwareZawy cloud order sync failed:", error));
+    render();
   });
   render();
 }
@@ -1200,6 +1375,30 @@ function szCouponValueLabel(coupon) {
   return coupon.type === "fixed" ? szMoney(value) : `${value.toLocaleString("ar-EG")}%`;
 }
 
+function szCouponScopeLabel(coupon) {
+  const section = szGetSections().find((item) => item.id === coupon.sectionId);
+  const product = szGetProducts().find((item) => item.id === coupon.productId);
+  if (product) return `اشتراك: ${product.nameAr || product.nameEn}`;
+  if (section) return `قسم: ${section.titleAr || section.titleEn}`;
+  return "كل الاشتراكات";
+}
+
+function szCouponExpiryLabel(coupon) {
+  if (!coupon.expiresAt) return "بدون انتهاء";
+  const date = new Date(coupon.expiresAt);
+  if (Number.isNaN(date.getTime())) return "بدون انتهاء";
+  const expired = date.getTime() <= Date.now();
+  return `${expired ? "منتهي" : "ينتهي"} ${date.toLocaleString("ar-EG", { dateStyle: "medium", timeStyle: "short" })}`;
+}
+
+function szDateTimeLocalValue(value) {
+  if (!value) return "";
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) return "";
+  const offset = date.getTimezoneOffset() * 60000;
+  return new Date(date.getTime() - offset).toISOString().slice(0, 16);
+}
+
 function szRenderCouponsAdmin() {
   szAdminShell("coupons");
   const main = document.querySelector("[data-admin-main]");
@@ -1212,7 +1411,7 @@ function szRenderCouponsAdmin() {
     <div class="coupon-summary" data-coupon-summary></div>
     <div class="table-wrap" style="margin-top:18px">
       <table class="coupons-table">
-        <thead><tr><th>الكود</th><th>نوع الخصم</th><th>القيمة</th><th>الحالة</th><th>إجراء</th></tr></thead>
+        <thead><tr><th>الكود</th><th>نوع الخصم</th><th>القيمة</th><th>النطاق</th><th>الوقت</th><th>الحالة</th><th>إجراء</th></tr></thead>
         <tbody data-coupons-table></tbody>
       </table>
     </div>
@@ -1231,6 +1430,8 @@ function szRenderCouponsAdmin() {
         <td><strong>${szEscapeHtml(coupon.code)}</strong></td>
         <td>${szEscapeHtml(szCouponTypeLabel(coupon.type))}</td>
         <td>${szEscapeHtml(szCouponValueLabel(coupon))}</td>
+        <td>${szEscapeHtml(szCouponScopeLabel(coupon))}</td>
+        <td>${szEscapeHtml(szCouponExpiryLabel(coupon))}</td>
         <td><span class="status-pill">${coupon.active ? "فعال" : "متوقف"}</span></td>
         <td>
           <div class="row-actions">
@@ -1240,11 +1441,13 @@ function szRenderCouponsAdmin() {
           </div>
         </td>
       </tr>
-    `).join("") : `<tr><td colspan="5">لا توجد كوبونات بعد. اضغط "كوبون جديد" لإضافة أول كوبون.</td></tr>`;
+    `).join("") : `<tr><td colspan="7">لا توجد كوبونات بعد. اضغط "كوبون جديد" لإضافة أول كوبون.</td></tr>`;
   };
 
   const openForm = (coupon = {}) => {
     const form = document.querySelector("[data-coupon-form]");
+    const sections = szGetSections();
+    const products = szGetProducts();
     form.style.display = "grid";
     form.innerHTML = `
       <input type="hidden" name="oldCode" value="${szEscapeHtml(coupon.code || "")}">
@@ -1257,6 +1460,19 @@ function szRenderCouponsAdmin() {
         </select>
       </label>
       <label>القيمة<input name="value" type="number" min="0" step="0.01" value="${Number(coupon.value || 0)}" required></label>
+      <label>ينتهي في<input name="expiresAt" type="datetime-local" value="${szEscapeHtml(szDateTimeLocalValue(coupon.expiresAt))}"></label>
+      <label>قسم محدد
+        <select name="sectionId">
+          <option value="">كل الأقسام</option>
+          ${sections.map((section) => `<option value="${szEscapeHtml(section.id)}" ${coupon.sectionId === section.id ? "selected" : ""}>${szEscapeHtml(section.titleAr || section.titleEn || section.id)}</option>`).join("")}
+        </select>
+      </label>
+      <label>اشتراك محدد
+        <select name="productId">
+          <option value="">كل الاشتراكات</option>
+          ${products.map((product) => `<option value="${szEscapeHtml(product.id)}" ${coupon.productId === product.id ? "selected" : ""}>${szEscapeHtml(product.nameAr || product.nameEn || product.id)}</option>`).join("")}
+        </select>
+      </label>
       <label><input name="active" type="checkbox" ${coupon.active !== false ? "checked" : ""}> كوبون فعال</label>
       <div class="toolbar full">
         <button class="btn primary" type="submit">حفظ الكوبون</button>
@@ -1323,6 +1539,9 @@ function szRenderCouponsAdmin() {
       code,
       type: data.type === "fixed" ? "fixed" : "percent",
       value,
+      expiresAt: data.expiresAt ? new Date(data.expiresAt).toISOString() : "",
+      sectionId: data.sectionId || "",
+      productId: data.productId || "",
       active: form.active.checked
     });
     szWrite(SZ_KEYS.coupons, coupons);
@@ -1331,6 +1550,105 @@ function szRenderCouponsAdmin() {
   });
 
   renderTable();
+}
+
+function szDurationFromLabel(label = "") {
+  const text = String(label || "");
+  const amount = Number(text.match(/\d+/)?.[0] || 1);
+  if (/سنة|سنوي|year/i.test(text)) return { amount, unit: "year" };
+  if (/يوم|day/i.test(text)) return { amount, unit: "day" };
+  return { amount, unit: "month" };
+}
+
+function szAddDuration(date, duration) {
+  const next = new Date(date);
+  if (duration.unit === "year") next.setFullYear(next.getFullYear() + duration.amount);
+  else if (duration.unit === "day") next.setDate(next.getDate() + duration.amount);
+  else next.setMonth(next.getMonth() + duration.amount);
+  return next;
+}
+
+function szRenewalRows(orders = szGetOrders()) {
+  return orders.flatMap((order) => {
+    const start = new Date(order.confirmedAt || order.createdAt || Date.now());
+    if (Number.isNaN(start.getTime())) return [];
+    return (order.items || []).map((item) => {
+      const durationLabel = item.optionLabel || item.durationAr || item.durationEn || "شهر واحد";
+      const end = szAddDuration(start, szDurationFromLabel(durationLabel));
+      const diffDays = Math.ceil((end.getTime() - Date.now()) / 86400000);
+      return {
+        order,
+        item,
+        customer: order.customer || {},
+        start,
+        end,
+        diffDays,
+        durationLabel
+      };
+    });
+  }).sort((a, b) => a.end - b.end);
+}
+
+function szRenewalState(row) {
+  if (row.diffDays < 0) return "انتهى";
+  if (row.diffDays <= 7) return "قريب";
+  return "نشط";
+}
+
+function szExportRenewalsSheet(rows = szRenewalRows()) {
+  szDownloadExcelSheet("softwarezawy-renewals", ["العميل", "الهاتف", "البريد", "الاشتراك", "المدة", "بداية الاشتراك", "نهاية الاشتراك", "المتبقي", "رقم الطلب"], rows.map((row) => [
+    row.customer.name || "",
+    row.customer.phone || "",
+    row.customer.email || "",
+    row.item.nameAr || row.item.nameEn || "",
+    row.durationLabel,
+    row.start.toLocaleDateString("ar-EG"),
+    row.end.toLocaleDateString("ar-EG"),
+    row.diffDays < 0 ? `متأخر ${Math.abs(row.diffDays)} يوم` : `${row.diffDays} يوم`,
+    row.order.id
+  ]));
+}
+
+function szRenderRenewalsAdmin() {
+  szAdminShell("renewals");
+  const main = document.querySelector("[data-admin-main]");
+  const rows = szRenewalRows();
+  const soonCount = rows.filter((row) => row.diffDays >= 0 && row.diffDays <= 7).length;
+  const expiredCount = rows.filter((row) => row.diffDays < 0).length;
+  main.innerHTML = `
+    <div class="toolbar">
+      <div><p class="eyebrow">Renewals</p><h1>التجديدات</h1></div>
+      <button class="btn ghost" type="button" data-export-renewals ${rows.length ? "" : "disabled"}>تصدير التجديدات Excel</button>
+    </div>
+    <div class="admin-grid renewal-summary">
+      <article class="admin-card"><h3>كل الاشتراكات</h3><strong class="price">${rows.length.toLocaleString("ar-EG")}</strong><p>اشتراكات محسوبة من الطلبات.</p></article>
+      <article class="admin-card"><h3>تجديد قريب</h3><strong class="price">${soonCount.toLocaleString("ar-EG")}</strong><p>ينتهي خلال 7 أيام.</p></article>
+      <article class="admin-card"><h3>منتهي</h3><strong class="price">${expiredCount.toLocaleString("ar-EG")}</strong><p>يحتاج تواصل سريع.</p></article>
+    </div>
+    ${rows.length ? `
+      <div class="table-wrap" style="margin-top:18px">
+        <table>
+          <thead><tr><th>العميل</th><th>الهاتف</th><th>الاشتراك</th><th>المدة</th><th>بدأ يوم</th><th>ينتهي يوم</th><th>المتبقي</th><th>الحالة</th><th>الطلب</th></tr></thead>
+          <tbody>
+            ${rows.map((row) => `
+              <tr>
+                <td>${szEscapeHtml(row.customer.name || "-")}</td>
+                <td>${szEscapeHtml(row.customer.phone || "-")}</td>
+                <td>${szEscapeHtml(row.item.nameAr || row.item.nameEn || "-")}</td>
+                <td>${szEscapeHtml(row.durationLabel)}</td>
+                <td>${szEscapeHtml(row.start.toLocaleDateString("ar-EG"))}</td>
+                <td>${szEscapeHtml(row.end.toLocaleDateString("ar-EG"))}</td>
+                <td>${row.diffDays < 0 ? `متأخر ${Math.abs(row.diffDays).toLocaleString("ar-EG")} يوم` : `${row.diffDays.toLocaleString("ar-EG")} يوم`}</td>
+                <td><span class="status-pill">${szEscapeHtml(szRenewalState(row))}</span></td>
+                <td>${szEscapeHtml(row.order.id)}</td>
+              </tr>
+            `).join("")}
+          </tbody>
+        </table>
+      </div>
+    ` : `<div class="empty">لا توجد طلبات بها اشتراكات لحساب التجديدات.</div>`}
+  `;
+  main.querySelector("[data-export-renewals]")?.addEventListener("click", () => szExportRenewalsSheet(rows));
 }
 
 function szRenderManagersAdmin() {
@@ -1344,6 +1662,7 @@ document.addEventListener("softwarezawy:sync-updated", () => {
   if (location.pathname.endsWith("softwarezawy-admin-dashboard.html")) szRenderDashboard();
   if (location.pathname.endsWith("softwarezawy-admin-orders.html")) szRenderOrdersAdmin();
   if (location.pathname.endsWith("softwarezawy-admin-coupons.html")) szRenderCouponsAdmin();
+  if (location.pathname.endsWith("softwarezawy-admin-renewals.html")) szRenderRenewalsAdmin();
 });
 
 szOnReady(() => {

@@ -15,11 +15,46 @@ function szCartSubtotal(lines) {
   return lines.reduce((sum, line) => sum + line.total, 0);
 }
 
-function szCouponDiscount(code, subtotal) {
-  const coupon = szGetCoupons().find((item) => item.active && item.code.toLowerCase() === String(code || "").toLowerCase());
-  if (!coupon) return { coupon: null, amount: 0 };
-  const amount = coupon.type === "percent" ? subtotal * (Number(coupon.value) / 100) : Number(coupon.value);
-  return { coupon, amount: Math.min(amount, subtotal) };
+function szCouponRemaining(coupon) {
+  if (!coupon?.expiresAt) return "";
+  const diff = new Date(coupon.expiresAt).getTime() - Date.now();
+  if (Number.isNaN(diff) || diff <= 0) return "";
+  const minutes = Math.floor(diff / 60000);
+  const days = Math.floor(minutes / 1440);
+  const hours = Math.floor((minutes % 1440) / 60);
+  const mins = minutes % 60;
+  if (days) return `${days} يوم و ${hours} ساعة`;
+  if (hours) return `${hours} ساعة و ${mins} دقيقة`;
+  return `${Math.max(1, mins)} دقيقة`;
+}
+
+function szCouponAppliesToLine(coupon, line) {
+  if (coupon.productId && coupon.productId !== line.productId) return false;
+  if (coupon.sectionId && coupon.sectionId !== line.product?.sectionId) return false;
+  return true;
+}
+
+function szCouponDiscount(code, subtotal, lines = szCartLines()) {
+  const rawCode = String(code || "").trim();
+  if (!rawCode) return { coupon: null, amount: 0, eligibleSubtotal: subtotal, message: "" };
+  const coupon = szGetCoupons().find((item) => item.active && item.code.toLowerCase() === rawCode.toLowerCase());
+  if (!coupon) return { coupon: null, amount: 0, eligibleSubtotal: 0, message: szT("الكوبون غير صحيح أو متوقف.", "Coupon is invalid or inactive.") };
+  if (coupon.expiresAt && new Date(coupon.expiresAt).getTime() <= Date.now()) {
+    return { coupon: null, amount: 0, eligibleSubtotal: 0, message: szT("انتهت صلاحية الكوبون.", "Coupon has expired.") };
+  }
+  const eligibleLines = lines.filter((line) => szCouponAppliesToLine(coupon, line));
+  const eligibleSubtotal = eligibleLines.reduce((sum, line) => sum + line.total, 0);
+  if (!eligibleSubtotal) {
+    return { coupon: null, amount: 0, eligibleSubtotal: 0, message: szT("الكوبون غير متاح لهذه الاشتراكات.", "Coupon is not available for these subscriptions.") };
+  }
+  const amount = coupon.type === "percent" ? eligibleSubtotal * (Number(coupon.value) / 100) : Number(coupon.value);
+  const remaining = szCouponRemaining(coupon);
+  return {
+    coupon,
+    amount: Math.min(amount, eligibleSubtotal, subtotal),
+    eligibleSubtotal,
+    message: remaining ? szT(`متبقي على الكوبون: ${remaining}`, `Coupon ends in: ${remaining}`) : ""
+  };
 }
 
 function szRenderCart() {
@@ -49,6 +84,7 @@ function szRenderCart() {
   summary.innerHTML = `
     <div class="cart-row"><span>${szT("الإجمالي قبل الخصم", "Subtotal")}</span><strong>${szMoney(subtotal)}</strong></div>
     <label class="field">${szT("كود الخصم", "Coupon code")}<input data-coupon-code placeholder="AI10"></label>
+    <div class="coupon-message" data-coupon-message></div>
     <div class="cart-row"><span>${szT("الخصم", "Discount")}</span><strong data-discount>${szMoney(0)}</strong></div>
     <div class="cart-row"><span>${szT("الإجمالي النهائي", "Final total")}</span><strong class="price" data-final-total>${szMoney(subtotal)}</strong></div>
   `;
@@ -81,9 +117,14 @@ function szUpdateCouponTotals() {
   const lines = szCartLines();
   const subtotal = szCartSubtotal(lines);
   const code = document.querySelector("[data-coupon-code]")?.value || "";
-  const discount = szCouponDiscount(code, subtotal);
+  const discount = szCouponDiscount(code, subtotal, lines);
   document.querySelector("[data-discount]").textContent = szMoney(discount.amount);
   document.querySelector("[data-final-total]").textContent = szMoney(subtotal - discount.amount);
+  const message = document.querySelector("[data-coupon-message]");
+  if (message) {
+    message.textContent = discount.message || "";
+    message.classList.toggle("active", Boolean(discount.message));
+  }
 }
 
 function szSubmitOrder(event) {
@@ -96,7 +137,7 @@ function szSubmitOrder(event) {
   const form = new FormData(event.currentTarget);
   const subtotal = szCartSubtotal(lines);
   const code = document.querySelector("[data-coupon-code]")?.value || "";
-  const discount = szCouponDiscount(code, subtotal);
+  const discount = szCouponDiscount(code, subtotal, lines);
   const total = subtotal - discount.amount;
   const order = {
     id: `SZ-${Date.now()}`,
