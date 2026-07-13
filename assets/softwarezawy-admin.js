@@ -210,7 +210,7 @@ function szRenderDashboard() {
       ${szDashboardTopItemsChart(topItems)}
       ${szDashboardStatusChart(orders)}
     </div>
-    <div class="notice" style="margin-top:18px">تنبيه: لأن الموقع Static، تعديلات الأدمن محفوظة في localStorage على هذا الجهاز فقط إلا لو تم نقلها إلى ملف البيانات قبل الرفع.</div>
+    <div class="notice" style="margin-top:18px">تم تفعيل مزامنة الأجهزة: أي تعديل من الأدمن يتم رفعه تلقائيا للسحابة، وباقي الأجهزة تسحب التحديثات تلقائيا عند فتح لوحة التحكم أو أثناء استخدامها.</div>
   `;
 }
 
@@ -1300,7 +1300,7 @@ function szRenderSettingsAdmin() {
     </form>
     <form class="form-panel form-grid" data-sync-form style="margin-top:18px">
       <div class="form-section full"><h3>مزامنة الأجهزة</h3></div>
-      <div class="notice full">المزامنة تحتاج رابط API مشترك وتوكن أدمن. المنتجات والصور الموجودة في هذا المتصفح لن تتمسح؛ اضغط "رفع بيانات هذا الجهاز" بعد ضبط الرابط لنشرها لباقي الأجهزة. ولتعمل لكل الزوار، ضع نفس الرابط في assets/softwarezawy-sync-config.js ثم ارفع الملفات.</div>
+      <div class="notice full">المزامنة مفعلة: أي تعديل على المنتجات أو الأقسام أو الطلبات أو الكوبونات يتم رفعه تلقائيا، وباقي الأجهزة تسحب التحديثات بشكل دوري. استخدم زر "رفع بيانات هذا الجهاز" مرة واحدة لو عايز تعتمد نسخة هذا الجهاز كنقطة بداية.</div>
       <label>syncEnabled
         <select name="enabled">
           <option value="true" ${sync.enabled ? "selected" : ""}>true</option>
@@ -1308,6 +1308,13 @@ function szRenderSettingsAdmin() {
         </select>
       </label>
       <label>timeoutMs<input name="timeoutMs" type="number" min="1500" value="${Number(sync.timeoutMs || 4500)}"></label>
+      <label>autoPull
+        <select name="autoPull">
+          <option value="true" ${sync.autoPull ? "selected" : ""}>true</option>
+          <option value="false" ${sync.autoPull ? "" : "selected"}>false</option>
+        </select>
+      </label>
+      <label>pullIntervalMs<input name="pullIntervalMs" type="number" min="15000" value="${Number(sync.pullIntervalMs || 15000)}"></label>
       <label class="full">syncEndpoint<input name="endpoint" value="${szEscapeHtml(sync.endpoint || "")}" placeholder="https://script.google.com/macros/s/.../exec"></label>
       <label class="full">adminSyncToken<input name="token" type="password" value="${szEscapeHtml(sync.token || "")}" placeholder="نفس التوكن الموجود في ملف Apps Script"></label>
       <button class="btn primary full" type="submit">حفظ إعدادات المزامنة</button>
@@ -1658,11 +1665,23 @@ function szRenderManagersAdmin() {
   main.innerHTML = `<p class="eyebrow">Managers</p><h1>المديرين</h1><div class="table-wrap"><table><thead><tr><th>المستخدم</th><th>الصلاحية</th></tr></thead><tbody>${managers.map((m) => `<tr><td>${m.username}</td><td>${m.role}</td></tr>`).join("")}</tbody></table></div><div class="notice" style="margin-top:18px">الدخول المحلي للتجربة فقط، وليس نظام صلاحيات حقيقي لموقع إنتاجي.</div>`;
 }
 
+function szRefreshVisibleAdminPage() {
+  const path = location.pathname;
+  const activeForm = document.activeElement?.closest?.("form");
+  if (activeForm && !confirm("وصل تحديث جديد من جهاز آخر. تحديث الصفحة قد يلغي البيانات غير المحفوظة في النموذج الحالي. تحديث الآن؟")) return;
+  if (path.endsWith("softwarezawy-admin-dashboard.html")) return szRenderDashboard();
+  if (path.endsWith("softwarezawy-admin-products.html")) return szRenderProductsAdmin();
+  if (path.endsWith("softwarezawy-admin-orders.html")) return szRenderOrdersAdmin();
+  if (path.endsWith("softwarezawy-admin-renewals.html")) return szRenderRenewalsAdmin();
+  if (path.endsWith("softwarezawy-admin-invoice.html")) return szRenderInvoiceAdmin();
+  if (path.endsWith("softwarezawy-admin-coupons.html")) return szRenderCouponsAdmin();
+  if (path.endsWith("softwarezawy-admin-visual.html")) return szRenderVisualAdmin();
+  if (path.endsWith("softwarezawy-admin-settings.html")) return szRenderSettingsAdmin();
+  if (path.endsWith("softwarezawy-admin-managers.html")) return szRenderManagersAdmin();
+}
+
 document.addEventListener("softwarezawy:sync-updated", () => {
-  if (location.pathname.endsWith("softwarezawy-admin-dashboard.html")) szRenderDashboard();
-  if (location.pathname.endsWith("softwarezawy-admin-orders.html")) szRenderOrdersAdmin();
-  if (location.pathname.endsWith("softwarezawy-admin-coupons.html")) szRenderCouponsAdmin();
-  if (location.pathname.endsWith("softwarezawy-admin-renewals.html")) szRenderRenewalsAdmin();
+  if (szAdminLoggedIn()) szRefreshVisibleAdminPage();
 });
 
 szOnReady(() => {

@@ -4,7 +4,7 @@ window.SOFTWAREZAWY_CLOUD_SYNC = {
   adminToken: "Aa01000706717@",
   timeoutMs: 4500,
   autoPull: true,
-  pullIntervalMs: 60000,
+  pullIntervalMs: 15000,
   useJsonp: true,
   noCorsPost: true
 };

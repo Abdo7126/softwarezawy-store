@@ -116,13 +116,17 @@ function szTrackMeta(eventName, payload = {}) {
   }
 }
 
+function szProductUrl(productId) {
+  return `softwarezawy-product.html?id=${encodeURIComponent(productId)}`;
+}
+
 function szProductCard(product) {
-  const firstOption = szProductOptions(product)[0];
+  const optionsCount = szProductOptions(product).length;
   return `
     <article class="product-card">
-      <button class="product-image" type="button" data-details="${product.id}" aria-label="${szText(product, "name")}">
+      <a class="product-image" href="${szProductUrl(product.id)}" aria-label="${szText(product, "name")}">
         <img src="${szProductImage(product)}" alt="${szText(product, "name")}">
-      </button>
+      </a>
       <div class="product-top">
         <span class="product-badge">${szText(product, "badge") || product.provider}</span>
         <span>${product.provider}</span>
@@ -131,14 +135,12 @@ function szProductCard(product) {
         <h3>${szText(product, "name")}</h3>
         <p>${szText(product, "description")}</p>
       </div>
-      <div>
-        <strong class="price">${szMoney(firstOption.price)}</strong>
-        ${product.oldPrice ? `<span class="old-price">${szMoney(product.oldPrice)}</span>` : ""}
+      <div class="price-hidden-note">
+        ${szT("السعر النهائي حسب الباقة المختارة داخل صفحة المنتج.", "Final price depends on the package selected inside the product page.")}
       </div>
-      <p>${szOptionName(product)}: ${szOptionLabel(firstOption)} · ${szText(product, "activation")}</p>
+      <p>${szOptionName(product)}: ${optionsCount.toLocaleString(szIsArabic() ? "ar-EG" : "en-US")} ${szT("باقات متاحة", "available packages")} · ${szText(product, "activation")}</p>
       <div class="toolbar">
-        <button class="btn primary" type="button" data-add-cart="${product.id}">${szT("أضف للسلة", "Add to cart")}</button>
-        <button class="btn ghost" type="button" data-details="${product.id}">${szT("التفاصيل", "Details")}</button>
+        <a class="btn primary" href="${szProductUrl(product.id)}">${szT("عرض الباقات والأسعار", "View packages and prices")}</a>
       </div>
     </article>
   `;
@@ -265,6 +267,13 @@ function szBindProductActions() {
       szAddToCart(modalAdd.dataset.modalAdd, 1, selected?.value || "");
       document.querySelector("[data-product-modal]")?.classList.remove("open");
     }
+    const pageAdd = event.target.closest("[data-page-add]");
+    if (pageAdd) {
+      const selected = document.querySelector('input[name="product-option"]:checked');
+      szAddToCart(pageAdd.dataset.pageAdd, 1, selected?.value || "");
+      pageAdd.textContent = szT("تمت الإضافة للسلة", "Added to cart");
+      setTimeout(() => (pageAdd.textContent = szT("أضف للسلة", "Add to cart")), 1400);
+    }
   });
 }
 
@@ -347,12 +356,82 @@ function szRenderStorePage() {
   render();
 }
 
+
+function szRenderProductPage() {
+  const holder = document.querySelector("[data-product-page]");
+  if (!holder) return;
+  const params = new URLSearchParams(location.search);
+  const productId = params.get("id") || "";
+  const product = szGetProducts().find((item) => item.id === productId && item.active !== false);
+  if (!product) {
+    holder.innerHTML = `<div class="empty">${szT("المنتج غير متاح حاليا.", "This product is not available right now.")}</div>`;
+    return;
+  }
+  const options = szProductOptions(product);
+  const selected = options[0] || { id: "default", price: product.price || 0 };
+  document.title = `${szText(product, "name")} | SoftwareZawy`;
+  holder.innerHTML = `
+    <article class="product-detail-page standalone-detail">
+      <div class="product-detail-layout">
+        <div class="detail-media detail-media-feature">
+          <img src="${szProductImage(product)}" alt="${szText(product, "name")}">
+        </div>
+        <div class="detail-content">
+          <div class="product-detail-kicker">
+            <span class="product-badge">${szText(product, "badge") || product.provider}</span>
+            <span>${product.provider}</span>
+          </div>
+          <h1>${szText(product, "name")}</h1>
+          <p class="lead">${szText(product, "description")}</p>
+          <div class="detail-facts">
+            <div><span>${szT("التفعيل", "Activation")}</span><strong>${szText(product, "activation") || szT("حسب المتاح", "Based on availability")}</strong></div>
+            <div><span>${szT("نوع الاختيار", "Option type")}</span><strong>${szOptionName(product)}</strong></div>
+            <div><span>${szT("عدد الباقات", "Packages")}</span><strong>${options.length.toLocaleString(szIsArabic() ? "ar-EG" : "en-US")}</strong></div>
+          </div>
+          <div class="detail-summary">
+            <h3>${szT("تفاصيل الاشتراك", "Subscription details")}</h3>
+            <p>${szText(product, "details") || szText(product, "description")}</p>
+          </div>
+          <div class="option-box">
+            <strong>${szT("اختار الباقة المناسبة", "Choose the right package")}</strong>
+            <div class="option-grid">
+              ${options.map((option, index) => `
+                <label class="option-pill ${index === 0 ? "selected" : ""}">
+                  <input type="radio" name="product-option" value="${option.id}" ${index === 0 ? "checked" : ""}>
+                  <span>${szOptionLabel(option)}</span>
+                  <b>${szMoney(option.price)}</b>
+                </label>
+              `).join("")}
+            </div>
+          </div>
+          <div class="detail-buy-row">
+            <div>
+              <span class="detail-price-label">${szT("السعر النهائي للباقة المختارة", "Final price for selected package")}</span>
+              <strong class="price" data-detail-price>${szMoney(selected.price)}</strong>
+            </div>
+            <button class="btn primary" type="button" data-page-add="${product.id}">${szT("أضف للسلة", "Add to cart")}</button>
+          </div>
+        </div>
+      </div>
+    </article>
+  `;
+  holder.querySelectorAll('input[name="product-option"]').forEach((input) => {
+    input.addEventListener("change", () => {
+      const option = options.find((item) => item.id === input.value) || options[0];
+      holder.querySelector("[data-detail-price]").textContent = szMoney(option.price);
+      holder.querySelectorAll(".option-pill").forEach((pill) => pill.classList.remove("selected"));
+      input.closest(".option-pill").classList.add("selected");
+    });
+  });
+}
+
 function szRefreshVisibleStorePage() {
   szMountHeader();
   szMountDrawer();
   if (document.querySelector("[data-home-hero]")) szRenderHome();
   if (document.querySelector("[data-section-head]")) szRenderSectionPage();
   if (document.querySelector("[data-store-products]")) szRenderStorePage();
+  if (document.querySelector("[data-product-page]")) szRenderProductPage();
   szUpdateCartCount();
 }
 
@@ -367,5 +446,6 @@ szOnReady(() => {
   szBindGlobalActions();
   szBindMotionTracking();
   szBindProductActions();
+  szRenderProductPage();
   szUpdateCartCount();
 });

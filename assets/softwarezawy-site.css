@@ -2040,3 +2040,24 @@ td {
     margin-top: 12px;
   }
 }
+
+.price-hidden-note {
+  border: 1px dashed var(--line);
+  border-radius: 8px;
+  padding: 10px 12px;
+  color: var(--accent-2);
+  background: color-mix(in srgb, var(--accent-2) 8%, transparent);
+  font-weight: 800;
+  line-height: 1.7;
+}
+
+.standalone-detail {
+  margin-top: 0;
+}
+
+.product-card .toolbar .btn.primary {
+  width: 100%;
+}
+.product-image {
+  display: block;
+}
