@@ -31,3 +31,8 @@ Open `softwarezawy-admin-visual.html` after login. You can:
 ## GitHub Pages
 
 Upload all files to the repository root. Keep relative links as they are. Add a `CNAME` file only if you have a custom domain.
+
+## Fix 2026-07-13
+- تم إصلاح اختفاء الاشتراك الجديد بعد الريفريش.
+- السبب كان أن السحب التلقائي من السحابة كان يرجع نسخة قديمة ويمسح تعديل الأدمن المحلي قبل تأكيد رفعه.
+- الآن أي تعديل محلي في المنتجات/الأقسام/الإعدادات يتم حمايته بعلامة pending ولا يتم استبداله بسحابة قديمة.

@@ -289,6 +289,18 @@ function szClearPendingSync(localKey) {
   localStorage.removeItem(szSyncPendingKey(localKey));
 }
 
+function szLocalUpdatedKey(localKey) {
+  return `softwarezawy_local_updated_${localKey}`;
+}
+
+function szMarkLocalUpdated(localKey) {
+  localStorage.setItem(szLocalUpdatedKey(localKey), String(Date.now()));
+}
+
+function szLocalUpdatedAt(localKey) {
+  return Number(localStorage.getItem(szLocalUpdatedKey(localKey)) || 0);
+}
+
 function szGetPendingSync(localKey) {
   try {
     return JSON.parse(localStorage.getItem(szSyncPendingKey(localKey)) || "null");
@@ -299,6 +311,7 @@ function szGetPendingSync(localKey) {
 
 function szWrite(key, value, options = {}) {
   localStorage.setItem(key, JSON.stringify(value));
+  if (options.markLocal !== false) szMarkLocalUpdated(key);
   if (options.sync !== false) {
     szMarkPendingSync(key, value);
     szQueueCloudWrite(key, value);
@@ -338,7 +351,7 @@ function szSaveSyncConfig(config) {
     pullIntervalMs: Number(config.pullIntervalMs || 60000),
     useJsonp: config.useJsonp !== false && config.useJsonp !== "false",
     noCorsPost: config.noCorsPost !== false && config.noCorsPost !== "false"
-  }, { sync: false });
+  }, { sync: false, markLocal: false });
 }
 
 function szIsAdminPage() {
@@ -386,13 +399,23 @@ function szApplyCloudSnapshot(data = {}) {
     const current = localStorage.getItem(localKey);
     const pending = szGetPendingSync(localKey);
     if (pending && JSON.stringify(pending.value) === current && current !== next) {
+      // لدينا تعديل محلي لم تؤكده السحابة بعد، فلا نسمح للنسخة القديمة بمسحه.
       szQueueCloudWrite(localKey, pending.value);
+      return;
+    }
+    const lastPullStart = Number(window.szLastCloudPullStartedAt || 0);
+    if (!pending && current !== next && szLocalUpdatedAt(localKey) > lastPullStart) {
+      // المستخدم عدل البيانات بعد بداية آخر سحب؛ تجاهل الرد القديم وادفع النسخة المحلية.
+      szMarkPendingSync(localKey, JSON.parse(current || "null"));
+      szQueueCloudWrite(localKey, JSON.parse(current || "null"));
       return;
     }
     if (current !== next) {
       localStorage.setItem(localKey, next);
       szClearPendingSync(localKey);
       changed = true;
+    } else {
+      szClearPendingSync(localKey);
     }
   });
   if (changed) document.dispatchEvent(new CustomEvent("softwarezawy:sync-updated", { detail: data }));
@@ -470,6 +493,7 @@ function szCloudGetJsonp(params = {}) {
 }
 
 async function szPullCloudSync(options = {}) {
+  window.szLastCloudPullStartedAt = Date.now();
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config)) return { skipped: true };
   try {
@@ -497,7 +521,10 @@ function szQueueCloudWrite(localKey, value) {
   if (!szCloudAvailable(config) || !config.token) return;
   window.szCloudWriteQueue = (window.szCloudWriteQueue || Promise.resolve())
     .then(() => szCloudPost({ action: "write", token: config.token, key: remoteKey, value }))
-    .then(() => szClearPendingSync(localKey))
+    .then((result) => {
+      // no-cors لا يرجع تأكيد حقيقي، لذلك نترك علامة الانتظار حتى يأتي سحب من السحابة بنفس البيانات.
+      if (!result?.opaque) szClearPendingSync(localKey);
+    })
     .catch((error) => console.warn("SoftwareZawy cloud sync write failed:", error));
 }
 
@@ -680,18 +707,18 @@ function szWhatsAppLink(message) {
 
 function szEnsureDefaults() {
   if (!localStorage.getItem(SZ_KEYS.settings)) {
-    szWrite(SZ_KEYS.settings, SOFTWAREZAWY_DEFAULTS.settings, { sync: false });
+    szWrite(SZ_KEYS.settings, SOFTWAREZAWY_DEFAULTS.settings, { sync: false, markLocal: false });
   } else {
     const settings = szRead(SZ_KEYS.settings, {});
     const mergedSettings = { ...SOFTWAREZAWY_DEFAULTS.settings, ...settings };
     if (mergedSettings.domain === "https://softwarezawy.com") mergedSettings.domain = "https://softwarezawy.shop";
     if (mergedSettings.supportEmail === "support@softwarezawy.com") mergedSettings.supportEmail = "support@softwarezawy.shop";
-    szWrite(SZ_KEYS.settings, mergedSettings, { sync: false });
+    szWrite(SZ_KEYS.settings, mergedSettings, { sync: false, markLocal: false });
   }
-  if (!localStorage.getItem(SZ_KEYS.sections)) szWrite(SZ_KEYS.sections, SOFTWAREZAWY_DEFAULTS.sections, { sync: false });
-  if (!localStorage.getItem(SZ_KEYS.products)) szWrite(SZ_KEYS.products, SOFTWAREZAWY_DEFAULTS.products, { sync: false });
-  if (!localStorage.getItem(SZ_KEYS.coupons)) szWrite(SZ_KEYS.coupons, SOFTWAREZAWY_DEFAULTS.coupons, { sync: false });
-  if (!localStorage.getItem(SZ_KEYS.managers)) szWrite(SZ_KEYS.managers, SOFTWAREZAWY_DEFAULTS.managers, { sync: false });
+  if (!localStorage.getItem(SZ_KEYS.sections)) szWrite(SZ_KEYS.sections, SOFTWAREZAWY_DEFAULTS.sections, { sync: false, markLocal: false });
+  if (!localStorage.getItem(SZ_KEYS.products)) szWrite(SZ_KEYS.products, SOFTWAREZAWY_DEFAULTS.products, { sync: false, markLocal: false });
+  if (!localStorage.getItem(SZ_KEYS.coupons)) szWrite(SZ_KEYS.coupons, SOFTWAREZAWY_DEFAULTS.coupons, { sync: false, markLocal: false });
+  if (!localStorage.getItem(SZ_KEYS.managers)) szWrite(SZ_KEYS.managers, SOFTWAREZAWY_DEFAULTS.managers, { sync: false, markLocal: false });
 }
 
 szEnsureDefaults();
