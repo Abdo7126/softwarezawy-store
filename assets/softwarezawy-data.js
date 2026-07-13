@@ -272,9 +272,37 @@ function szRead(key, fallback) {
   }
 }
 
+function szSyncPendingKey(localKey) {
+  return `softwarezawy_pending_sync_${localKey}`;
+}
+
+function szMarkPendingSync(localKey, value) {
+  const remoteKey = szCloudRemoteKey(localKey);
+  if (!remoteKey) return;
+  localStorage.setItem(szSyncPendingKey(localKey), JSON.stringify({
+    at: Date.now(),
+    value
+  }));
+}
+
+function szClearPendingSync(localKey) {
+  localStorage.removeItem(szSyncPendingKey(localKey));
+}
+
+function szGetPendingSync(localKey) {
+  try {
+    return JSON.parse(localStorage.getItem(szSyncPendingKey(localKey)) || "null");
+  } catch (error) {
+    return null;
+  }
+}
+
 function szWrite(key, value, options = {}) {
   localStorage.setItem(key, JSON.stringify(value));
-  if (options.sync !== false) szQueueCloudWrite(key, value);
+  if (options.sync !== false) {
+    szMarkPendingSync(key, value);
+    szQueueCloudWrite(key, value);
+  }
 }
 
 function szCloudRemoteKey(localKey) {
@@ -355,8 +383,15 @@ function szApplyCloudSnapshot(data = {}) {
         ? szMergeOrders(szRead(SZ_KEYS.orders, []), Array.isArray(value) ? value : [])
         : value;
     const next = JSON.stringify(normalized);
-    if (localStorage.getItem(localKey) !== next) {
+    const current = localStorage.getItem(localKey);
+    const pending = szGetPendingSync(localKey);
+    if (pending && JSON.stringify(pending.value) === current && current !== next) {
+      szQueueCloudWrite(localKey, pending.value);
+      return;
+    }
+    if (current !== next) {
       localStorage.setItem(localKey, next);
+      szClearPendingSync(localKey);
       changed = true;
     }
   });
@@ -462,13 +497,19 @@ function szQueueCloudWrite(localKey, value) {
   if (!szCloudAvailable(config) || !config.token) return;
   window.szCloudWriteQueue = (window.szCloudWriteQueue || Promise.resolve())
     .then(() => szCloudPost({ action: "write", token: config.token, key: remoteKey, value }))
+    .then(() => szClearPendingSync(localKey))
     .catch((error) => console.warn("SoftwareZawy cloud sync write failed:", error));
 }
 
 async function szPushCloudSnapshot() {
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config) || !config.token) throw new Error("بيانات المزامنة غير مكتملة.");
-  return szCloudPost({ action: "writeSnapshot", token: config.token, data: szCloudSnapshot() });
+  const result = await szCloudPost({ action: "writeSnapshot", token: config.token, data: szCloudSnapshot() });
+  SZ_CLOUD_ADMIN_KEYS.forEach((remoteKey) => {
+    const localKey = szCloudLocalKey(remoteKey);
+    if (localKey) szClearPendingSync(localKey);
+  });
+  return result;
 }
 
 async function szCreateCloudOrder(order) {
