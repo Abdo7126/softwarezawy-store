@@ -127,8 +127,10 @@ function szUpdateCouponTotals() {
   }
 }
 
-function szSubmitOrder(event) {
+async function szSubmitOrder(event) {
   event.preventDefault();
+  const submitButton = event.submitter || event.currentTarget.querySelector('button[type="submit"]');
+  if (submitButton?.disabled) return;
   const lines = szCartLines();
   if (!lines.length) {
     alert(szT("السلة فارغة.", "The cart is empty."));
@@ -168,13 +170,12 @@ function szSubmitOrder(event) {
   const orders = szGetOrders();
   orders.unshift(order);
   szWrite(SZ_KEYS.orders, orders);
-  szCreateCloudOrder(order).catch((error) => console.warn("SoftwareZawy cloud order sync failed:", error));
   szTrackMeta("Lead", {
     content_name: "AI subscription order",
     value: Number(order.total || 0),
     currency: "EGP"
   });
-  szSaveCart([]);
+
   const message = [
     `${szT("طلب جديد", "New order")} ${order.id}`,
     `${szT("الاسم", "Name")}: ${order.customer.name}`,
@@ -188,11 +189,36 @@ function szSubmitOrder(event) {
     `${szT("الخصم", "Discount")}: ${szMoney(order.discount)} ${order.coupon ? `(${order.coupon})` : ""}`,
     `${szT("الإجمالي", "Total")}: ${szMoney(order.total)}`
   ].join("\n");
-  window.open(szWhatsAppLink(message), "_blank", "noopener");
-  alert(szT("تم حفظ الطلب وفتح واتساب لإرساله.", "The order was saved and WhatsApp was opened to send it."));
-  location.href = "softwarezawy-store.html";
-}
 
+  const originalText = submitButton?.textContent || "";
+  if (submitButton) {
+    submitButton.disabled = true;
+    submitButton.textContent = szT("جاري إرسال الطلب...", "Sending order...");
+  }
+
+  let cloudOk = true;
+  try {
+    await szCreateCloudOrder(order, { useBeacon: true });
+  } catch (error) {
+    cloudOk = false;
+    console.warn("SoftwareZawy cloud order sync failed:", error);
+  }
+
+  szSaveCart([]);
+  const whatsappUrl = szWhatsAppLink(message);
+  const opened = window.open(whatsappUrl, "_blank", "noopener");
+  alert(cloudOk
+    ? szT("تم حفظ الطلب وإرساله للوحة الأدمن وفتح واتساب.", "The order was saved, sent to admin, and WhatsApp was opened.")
+    : szT("تم حفظ الطلب محليا وفتح واتساب. لو لم يظهر في لوحة الأدمن، تأكد من إعدادات المزامنة.", "The order was saved locally and WhatsApp was opened. If it does not appear in admin, check sync settings.")
+  );
+  if (opened) location.href = "softwarezawy-store.html";
+  else location.href = whatsappUrl;
+
+  if (submitButton) {
+    submitButton.disabled = false;
+    submitButton.textContent = originalText;
+  }
+}
 document.addEventListener("softwarezawy:sync-updated", () => {
   if (document.querySelector("[data-cart-items]")) szRenderCart();
 });

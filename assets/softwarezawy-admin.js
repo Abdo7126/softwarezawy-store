@@ -897,6 +897,11 @@ function szRenderOrdersAdmin() {
     szCreateCloudOrder(order).catch((error) => console.warn("SoftwareZawy cloud order sync failed:", error));
     render();
   });
+  if (window.szOrdersAdminSyncHandler) {
+    document.removeEventListener("softwarezawy:sync-updated", window.szOrdersAdminSyncHandler);
+  }
+  window.szOrdersAdminSyncHandler = () => render();
+  document.addEventListener("softwarezawy:sync-updated", window.szOrdersAdminSyncHandler);
   render();
 }
 

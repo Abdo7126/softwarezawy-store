@@ -445,22 +445,40 @@ function szCloudUrl(params = {}) {
   return url.toString();
 }
 
-async function szCloudPost(body) {
+function szCloudPostWithBeacon(endpoint, payload) {
+  if (!navigator.sendBeacon || payload.length > 60000) return false;
+  try {
+    const blob = new Blob([payload], { type: "text/plain;charset=utf-8" });
+    return navigator.sendBeacon(endpoint, blob);
+  } catch (error) {
+    console.warn("SoftwareZawy cloud sync beacon failed:", error);
+    return false;
+  }
+}
+
+async function szCloudPost(body, options = {}) {
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config)) return { skipped: true };
+  const payload = JSON.stringify(body);
+
+  if (options.useBeacon && szCloudPostWithBeacon(config.endpoint, payload)) {
+    return { ok: true, opaque: true, beacon: true };
+  }
+
   if (config.noCorsPost) {
     await fetch(config.endpoint, {
       method: "POST",
       mode: "no-cors",
       headers: { "Content-Type": "text/plain;charset=utf-8" },
-      body: JSON.stringify(body)
+      body: payload,
+      keepalive: payload.length <= 60000
     });
     return { ok: true, opaque: true };
   }
   return szCloudFetchJson(config.endpoint, {
     method: "POST",
     headers: { "Content-Type": "text/plain;charset=utf-8" },
-    body: JSON.stringify(body)
+    body: payload
   }, config.timeoutMs);
 }
 
@@ -539,10 +557,10 @@ async function szPushCloudSnapshot() {
   return result;
 }
 
-async function szCreateCloudOrder(order) {
+async function szCreateCloudOrder(order, options = {}) {
   const config = szGetSyncConfig();
   if (!szCloudAvailable(config)) return { skipped: true };
-  return szCloudPost({ action: "createOrder", order });
+  return szCloudPost({ action: "createOrder", order }, { useBeacon: options.useBeacon !== false });
 }
 
 function szWaitForSync() {
